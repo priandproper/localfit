@@ -79,6 +79,7 @@ function mergeStates(server, client) {
   for (const e of server.bodyFatLog || []) bf[e.date] = e
   for (const e of client.bodyFatLog || []) bf[e.date] = e
   out.bodyFatLog = Object.values(bf).sort((a, b) => a.date.localeCompare(b.date))
+  out.rewardsClaimed = { ...(server.rewardsClaimed || {}), ...(client.rewardsClaimed || {}) }
   return out
 }
 

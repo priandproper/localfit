@@ -142,6 +142,17 @@ export default function App() {
     setPending(true)
     scheduleSync()
   }
+  function claimReward(days) {
+    setState((prev) => {
+      const next = clone(prev)
+      next.rewardsClaimed = next.rewardsClaimed || {}
+      next.rewardsClaimed[days] = today
+      saveLocal(next)
+      return next
+    })
+    setPending(true)
+    scheduleSync()
+  }
 
   const day = useMemo(() => (state ? { ...defaultDay(), ...(state.days?.[today] || {}) } : null), [state, today])
   if (!state || !day) return <Centered>…</Centered>
@@ -221,6 +232,8 @@ export default function App() {
       </div>
 
       <GoalsSection state={state} profile={profile} today={today} onBodyFat={saveBodyFat} onProfile={updateProfile} />
+
+      <RewardsSection state={state} profile={profile} today={today} onClaim={claimReward} />
 
       <p className="mt-9 text-center text-[12px] text-[#a39c8d]">Consistency over intensity. One step at a time.</p>
     </div>
@@ -624,6 +637,89 @@ function fmtFull(iso) {
   const [y, m, d] = iso.split('-').map(Number)
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return `${months[m - 1]} ${d}, ${y}`
+}
+
+/* ---------- rewards: streak-based, leisure/time-off, non-food ---------- */
+const REWARDS = [
+  { days: 3, title: 'An episode, guilt-free', detail: 'Watch your show tonight — earned.' },
+  { days: 7, title: 'A movie night', detail: 'A proper movie, zero guilt.' },
+  { days: 14, title: 'Sleep in', detail: 'A slow morning, no alarm.' },
+  { days: 21, title: 'A gaming evening', detail: 'A full evening off the clock.' },
+  { days: 30, title: 'A complete rest day', detail: 'A whole day off. You earned every bit.' },
+]
+function strongDay(d, profile) {
+  if (!d) return false
+  const r = d.routines || {}, w = d.workout || {}, meals = d.meals || {}
+  const skin = r.skincareAM && r.skincarePM
+  const water = (d.water || 0) >= (profile.waterTarget || 8)
+  const move = (w.type && w.type !== '') || (d.steps || 0) >= (profile.stepTarget || 10000)
+  const dietLogged = ['breakfast', 'lunch', 'dinner'].filter((m) => meals[m] != null).length >= 2
+  return skin && water && move && dietLogged
+}
+function currentStreak(days, today, profile) {
+  let n = 0
+  for (let i = strongDay(days[today], profile) ? 0 : 1; ; i++) {
+    if (strongDay(days[shiftIso(today, -i)], profile)) n++; else break
+  }
+  return n
+}
+function dayGaps(d, profile) {
+  const r = (d && d.routines) || {}, w = (d && d.workout) || {}, meals = (d && d.meals) || {}
+  const gaps = []
+  if (!(r.skincareAM && r.skincarePM)) gaps.push('skincare')
+  if (!((d?.water || 0) >= (profile.waterTarget || 8))) gaps.push('water')
+  if (!((w.type && w.type !== '') || (d?.steps || 0) >= (profile.stepTarget || 10000))) gaps.push('movement')
+  if (['breakfast', 'lunch', 'dinner'].filter((m) => meals[m] != null).length < 2) gaps.push('log your meals')
+  return gaps
+}
+
+function RewardsSection({ state, profile, today, onClaim }) {
+  const days = state.days || {}
+  const streak = currentStreak(days, today, profile)
+  const todayD = days[today]
+  const todayStrong = strongDay(todayD, profile)
+  const gaps = dayGaps(todayD, profile)
+  const claimed = state.rewardsClaimed || {}
+
+  return (
+    <section className="mt-4 rounded-3xl border border-[#e6dfd0] bg-[#fbf9f3] p-5 shadow-[0_2px_10px_-6px_rgba(60,55,40,0.25)]">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-semibold text-[#23211c]">Rewards</h2>
+        <span className="text-[14px] font-semibold text-[#3d4a32]">{streak > 0 ? `${streak}-day streak` : 'No streak yet'}</span>
+      </div>
+      <p className="mt-0.5 text-[12px] text-[#8a8474]">Strong days in a row unlock these. One off-day resets the streak — that’s the deal.</p>
+
+      <div className="mt-3 rounded-2xl bg-[#23291f] px-4 py-3 text-[13px] text-[#cfccba]">
+        {todayStrong
+          ? <p><span className="font-semibold text-[#f4f1e8]">Today’s locked in.</span> Your streak lives another day.</p>
+          : <p>To keep the streak alive today: <span className="font-semibold text-[#f4f1e8]">{gaps.join(', ') || 'finish your day'}</span>.</p>}
+      </div>
+
+      <ul className="mt-4">
+        {REWARDS.map((rw, i) => {
+          const unlocked = streak >= rw.days
+          const when = claimed[rw.days]
+          return (
+            <li key={rw.days} className={`flex items-center justify-between gap-3 py-3 ${i ? 'border-t border-[#ece6da]' : ''}`}>
+              <div className="min-w-0">
+                <p className={`text-[14px] font-semibold ${unlocked ? 'text-[#23211c]' : 'text-[#a39c8d]'}`}>{rw.title}</p>
+                <p className="text-[12px] text-[#8a8474]">{rw.detail} · {rw.days}-day streak</p>
+              </div>
+              <div className="shrink-0">
+                {when ? (
+                  <span className="text-[12px] text-[#5b6745]">Claimed {fmtMD(when)}</span>
+                ) : unlocked ? (
+                  <button onClick={() => onClaim(rw.days)} className="rounded-full bg-[#3d4a32] px-4 py-1.5 text-[13px] font-medium text-[#f4f1e8] active:scale-95">Claim</button>
+                ) : (
+                  <span className="text-[12px] text-[#a39c8d]">{rw.days - streak} day{rw.days - streak === 1 ? '' : 's'} to go</span>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
 }
 
 function SyncIndicator({ status }) {
