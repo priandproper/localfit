@@ -357,6 +357,15 @@ function countLastN(days, today, n, pred) {
   return c
 }
 
+const ratio10 = (count, fullAt) => Math.max(0, Math.min(10, Math.round((count / fullAt) * 10)))
+function bodyFatScore(log, today) {
+  if (!log.length) return 0
+  const daysSince = Math.floor((Date.parse(today) - Date.parse(log[log.length - 1].date)) / 86400000)
+  if (daysSince <= 14) return 10
+  if (daysSince <= 28) return 6
+  return 3
+}
+
 function GoalsSection({ state, profile, today, onBodyFat }) {
   const days = state.days || {}
   const log = state.bodyFatLog || []
@@ -365,8 +374,21 @@ function GoalsSection({ state, profile, today, onBodyFat }) {
   const deadline = profile.bodyFatDeadline || '2026-12-31'
   const daysLeft = Math.max(0, Math.ceil((Date.parse(deadline) - Date.parse(today)) / 86400000))
 
-  const skin = countLastN(days, today, 14, (d) => d.routines?.skincareAM && d.routines?.skincarePM)
-  const hair = countLastN(days, today, 14, (d) => d.routines?.haircare)
+  const skinDays = countLastN(days, today, 14, (d) => d.routines?.skincareAM && d.routines?.skincarePM)
+  const hairDays = countLastN(days, today, 14, (d) => d.routines?.haircare)
+  const skinScore = ratio10(skinDays, 12)
+  const hairScore = ratio10(hairDays, 4)
+  const bfScore = bodyFatScore(log, today)
+
+  // Top-level: weighted toward the primary goal (body fat).
+  const overall = +(0.5 * bfScore + 0.3 * skinScore + 0.2 * hairScore).toFixed(1)
+  const word = overall >= 8 ? 'Dialed in' : overall >= 6 ? 'On track' : overall >= 4 ? 'Slipping' : 'Off track'
+  const weakest = [
+    { s: bfScore, msg: 'Log your body fat — that’s holding your score back.' },
+    { s: skinScore, msg: 'Tighten up your skincare consistency.' },
+    { s: hairScore, msg: 'Stay on your hair-care schedule.' },
+  ].sort((a, b) => a.s - b.s)[0]
+  const note = overall >= 8 ? 'You’re doing the work. Keep it up.' : weakest.msg
 
   let bfStatus = null
   if (latest) {
@@ -379,7 +401,18 @@ function GoalsSection({ state, profile, today, onBodyFat }) {
   return (
     <section className="mt-6 rounded-3xl border border-[#e6dfd0] bg-[#fbf9f3] p-5 shadow-[0_2px_10px_-6px_rgba(60,55,40,0.25)]">
       <h2 className="font-display text-xl font-semibold text-[#23211c]">Your goals</h2>
-      <p className="mt-0.5 text-[12px] text-[#8a8474]">The outcomes you’re chasing. Everything else is just the work to get here.</p>
+
+      {/* Top-level on-track score */}
+      <div className="mt-3 rounded-2xl bg-[#23291f] px-4 py-3.5">
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[#9aa581]">On track</p>
+            <p className="font-display text-3xl font-semibold leading-none text-[#f4f1e8]">{overall}<span className="text-lg text-[#9aa581]">/10</span></p>
+          </div>
+          <span className="text-[13px] font-medium text-[#cfccba]">{word}</span>
+        </div>
+        <p className="mt-2 text-[13px] text-[#cfccba]">{note}</p>
+      </div>
 
       {/* Body fat */}
       <div className="mt-4">
@@ -396,18 +429,18 @@ function GoalsSection({ state, profile, today, onBodyFat }) {
       <div className="mt-4 border-t border-[#ece6da] pt-4">
         <div className="flex items-baseline justify-between">
           <p className="text-[15px] font-semibold text-[#23211c]">Clear skin</p>
-          <span className="text-[14px] font-semibold text-[#3d4a32]">{skin}/14</span>
+          <span className="text-[14px] font-semibold text-[#3d4a32]">{skinScore}/10</span>
         </div>
-        <p className="text-[13px] text-[#8a8474]">Full AM + PM routine over the last 14 days. Aim for 12+.</p>
+        <p className="text-[13px] text-[#8a8474]">Full AM + PM routine — {skinDays} of the last 14 days.</p>
       </div>
 
       {/* Healthy hair */}
       <div className="mt-4 border-t border-[#ece6da] pt-4">
         <div className="flex items-baseline justify-between">
           <p className="text-[15px] font-semibold text-[#23211c]">Healthy hair</p>
-          <span className="text-[14px] font-semibold text-[#3d4a32]">{hair}/4</span>
+          <span className="text-[14px] font-semibold text-[#3d4a32]">{hairScore}/10</span>
         </div>
-        <p className="text-[13px] text-[#8a8474]">Care sessions over the last 14 days. Aim for ~4.</p>
+        <p className="text-[13px] text-[#8a8474]">Care sessions — {hairDays} over the last 14 days.</p>
       </div>
     </section>
   )
