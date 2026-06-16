@@ -33,16 +33,22 @@ export default function App() {
   const today = isoToday()
   const now = new Date(); const hour = now.getHours(); const minute = now.getMinutes()
   const [override, setOverride] = useState(null)
+  const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | synced | offline
 
   // Push the local copy to the backend and adopt the merged truth. No-op offline.
   const doSync = useCallback(async () => {
     const local = loadLocal(); if (!local) return
+    setSyncStatus('syncing')
     try {
       const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(local) })
-      if (!res.ok) return
+      if (!res.ok) throw new Error('sync')
       const merged = await res.json()
       saveLocal(merged); setState(merged)
-    } catch { /* offline — keep working from localStorage, sync later */ }
+      setSyncStatus('synced')
+      setTimeout(() => setSyncStatus((s) => (s === 'synced' ? 'idle' : s)), 1500)
+    } catch {
+      setSyncStatus('offline') // keep working from localStorage; auto-retry covers it
+    }
   }, [])
   const scheduleSync = useCallback(() => { clearTimeout(_syncTimer); _syncTimer = setTimeout(doSync, 1500) }, [doSync])
 
@@ -59,9 +65,18 @@ export default function App() {
         setState(init); saveLocal(init)
       }).catch(() => { setState(DEFAULT_STATE); saveLocal(DEFAULT_STATE) })
     }
+    // Automatic resync: when the network returns, when the app regains focus,
+    // and on a periodic heartbeat — so the backend always has the latest.
     const onOnline = () => doSync()
+    const onVisible = () => { if (document.visibilityState === 'visible') doSync() }
     window.addEventListener('online', onOnline)
-    return () => window.removeEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisible)
+    const heartbeat = setInterval(() => { if (navigator.onLine !== false) doSync() }, 60000)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(heartbeat)
+    }
   }, [doSync])
 
   function patch(p) {
@@ -136,7 +151,10 @@ export default function App() {
     <div className="mx-auto max-w-xl px-5 pb-16 pt-7">
       <div className="mb-5 flex items-baseline justify-between">
         <span className="font-display text-lg font-semibold tracking-tight text-[#20201d]">localfit</span>
-        <span className="text-[11px] uppercase tracking-[0.18em] text-[#a39c8d]">{prettyToday(today)}</span>
+        <div className="flex items-center gap-2">
+          <SyncIndicator status={syncStatus} />
+          <span className="text-[11px] uppercase tracking-[0.18em] text-[#a39c8d]">{prettyToday(today)}</span>
+        </div>
       </div>
 
       {/* The coach speaks — directive, one thing at a time */}
@@ -586,6 +604,25 @@ function fmtFull(iso) {
   return `${months[m - 1]} ${d}, ${y}`
 }
 
+function SyncIndicator({ status }) {
+  if (status === 'idle') return null
+  const color = status === 'offline' ? '#b9442f' : '#3d4a32'
+  const title = status === 'syncing' ? 'Syncing…' : status === 'synced' ? 'Synced' : 'Offline — will sync when you’re back online'
+  if (status === 'synced') {
+    return (
+      <span title={title} style={{ color }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+      </span>
+    )
+  }
+  return (
+    <span title={title} style={{ color }}>
+      <svg className={status === 'syncing' ? 'animate-spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
+      </svg>
+    </span>
+  )
+}
 function Centered({ children }) { return <div className="flex min-h-screen items-center justify-center px-6 text-center text-[#8a8474]">{children}</div> }
 function prettyToday(iso) {
   const [y, m, d] = iso.split('-').map(Number)
