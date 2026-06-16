@@ -1,18 +1,24 @@
 @import "tailwindcss";
 
-:root { color-scheme: dark; }
+:root { color-scheme: light; }
 
 html, body, #root { height: 100%; }
 
 /* Hide scrollbar (still scrollable) */
 html { scrollbar-width: none; -ms-overflow-style: none; }
 ::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 body {
   margin: 0;
-  background: #0b0f1a;
-  color: #e2e8f0;
+  background: #f1ede4;
+  color: #20201d;
   -webkit-font-smoothing: antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  touch-action: manipulation;       /* disable double-tap-to-zoom */
-  -webkit-text-size-adjust: 100%;   /* don't auto-scale text */
+  font-family: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+.font-display {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.015em;
 }

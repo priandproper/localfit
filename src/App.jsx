@@ -1,22 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from 'recharts'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const isoToday = () => {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
-const DAY_MS = 86400000
-const shiftIso = (iso, delta) => {
-  const [y, m, d] = iso.split('-').map(Number)
-  const nd = new Date(new Date(y, m - 1, d).getTime() + delta * DAY_MS)
-  const p = (n) => String(n).padStart(2, '0')
-  return `${nd.getFullYear()}-${p(nd.getMonth() + 1)}-${p(nd.getDate())}`
-}
 const freshDay = () => ({
-  workout: { did: false, type: '' }, weight: null,
+  steps: 0, workout: { did: false, type: '' }, weight: null,
   routines: { skincareAM: false, skincarePM: false, haircare: false },
   diet: { quality: null },
 })
@@ -25,7 +16,9 @@ export default function App() {
   const [state, setState] = useState(null)
   const [error, setError] = useState(null)
   const today = isoToday()
-  const hour = new Date().getHours()
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
 
   const refresh = useCallback(async () => {
     try {
@@ -36,10 +29,7 @@ export default function App() {
   }, [])
   useEffect(() => { refresh() }, [refresh])
 
-  const day = useMemo(() => {
-    if (!state) return null
-    return { ...freshDay(), ...(state.days?.[today] || {}) }
-  }, [state, today])
+  const day = useMemo(() => (state ? { ...freshDay(), ...(state.days?.[today] || {}) } : null), [state, today])
 
   async function patch(p) {
     await fetch('/api/day', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: today, patch: p }) })
@@ -49,155 +39,197 @@ export default function App() {
     await fetch('/api/weight', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: today, kg }) })
     await refresh()
   }
+  const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
-  if (error) return <Centered>Couldn’t reach your local server — is it running?</Centered>
+  if (error) return <Centered>Couldn’t reach your local server.</Centered>
   if (!state || !day) return <Centered>…</Centered>
 
   const { profile } = state
   const r = day.routines, w = day.workout, diet = day.diet || {}
-
-  const engaged =
-    (r.skincareAM || r.skincarePM ? 1 : 0) +
-    (r.haircare ? 1 : 0) +
-    (w.did || day.weight != null ? 1 : 0) +
-    (diet.quality ? 1 : 0)
-
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  const emoji = hour < 12 ? '☀️' : hour < 18 ? '🌤️' : '🌙'
-  const welcome = engaged === 0
-    ? "A fresh day to take care of yourself. Start with whatever feels easy — no pressure."
-    : engaged >= 4
-      ? "You've tended to everything today. This is exactly how it adds up. ✨"
-      : "You're looking after yourself today. Keep the flow going whenever you're ready."
+  const coach = buildCoach({ hour, minute, day, profile })
 
   return (
-    <div className="mx-auto max-w-xl px-4 pb-12 pt-6 sm:px-6">
-      <div className="mb-4 flex items-center gap-2">
-        <span className="rounded-md bg-emerald-400 px-2 py-0.5 font-mono text-sm font-bold text-slate-950">localfit</span>
-        <span className="text-xs uppercase tracking-widest text-slate-500">{prettyToday(today)}</span>
+    <div className="mx-auto max-w-xl px-5 pb-16 pt-7">
+      <div className="mb-5 flex items-baseline justify-between">
+        <span className="font-display text-lg font-semibold tracking-tight text-[#20201d]">localfit</span>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-[#a39c8d]">{prettyToday(today)}</span>
       </div>
 
-      {/* Warm welcome */}
-      <div className="mb-5 rounded-3xl border border-rose-900/30 bg-gradient-to-br from-rose-950/40 via-amber-950/20 to-slate-900/40 p-6">
-        <h1 className="text-2xl font-bold text-white">{greeting}, {profile.name} {emoji}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-rose-100/80">{welcome}</p>
+      {/* The coach speaks */}
+      <section className="rounded-[28px] bg-[#23291f] px-6 py-7 shadow-[0_18px_40px_-24px_rgba(35,41,31,0.7)]">
+        <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-[#9aa581]">{coach.eyebrow}</p>
+        <h1 className="font-display mt-3 text-[27px] font-semibold leading-[1.15] text-[#f4f1e8]">{coach.headline}</h1>
+        <p className="mt-3 text-[15px] leading-relaxed text-[#cfccba]">{coach.support}</p>
+        {coach.action && (
+          <button
+            onClick={() => scrollTo(coach.action.target)}
+            className="mt-5 rounded-full bg-[#e9e4d6] px-5 py-2.5 text-sm font-semibold text-[#23291f] transition active:scale-95"
+          >
+            {coach.action.label}
+          </button>
+        )}
+      </section>
+
+      <div className="mt-6 space-y-4">
+        <Pillar id="movement" title="Movement" note="Lose fat, build muscle">
+          <Field label="Steps today">
+            <NumInput value={day.steps || ''} placeholder={String(profile.stepTarget)}
+              onCommit={(v) => patch({ steps: v })} />
+            <span className="text-[13px] text-[#8a8474]">of {profile.stepTarget.toLocaleString()}</span>
+          </Field>
+          <div className="mt-3">
+            <p className="mb-2 text-[13px] text-[#6f6a5d]">Today’s training</p>
+            <Segmented options={['Weights', 'Cardio', 'Walk', 'Rest']} value={w.type}
+              onPick={(opt) => patch({ workout: { did: opt !== 'Rest', type: opt } })} />
+          </div>
+          <div className="mt-3">
+            <Field label="Bodyweight">
+              <NumInput value={day.weight ?? ''} placeholder="kg" step="0.1"
+                onCommit={(v) => saveWeight(v)} />
+              {day.weight != null && <span className="text-[13px] text-[#5b6745]">recorded</span>}
+            </Field>
+            {(state.weightLog || []).length >= 2 && <div className="mt-2"><WeightChart log={state.weightLog} /></div>}
+          </div>
+        </Pillar>
+
+        <Pillar id="skin" title="Skin" note="Your daily care">
+          <Segmented options={['Morning', 'Evening']}
+            multi value={[r.skincareAM && 'Morning', r.skincarePM && 'Evening'].filter(Boolean)}
+            onPick={(opt) => patch({ routines: opt === 'Morning' ? { skincareAM: !r.skincareAM } : { skincarePM: !r.skincarePM } })} />
+        </Pillar>
+
+        <Pillar id="hair" title="Hair" note="As scheduled, every few days">
+          <Segmented options={['Done today']} value={r.haircare ? 'Done today' : ''}
+            onPick={() => patch({ routines: { haircare: !r.haircare } })} />
+        </Pillar>
+
+        <Pillar id="diet" title="Diet" note="How you fuel the change">
+          <p className="mb-2 text-[13px] text-[#6f6a5d]">How did you eat today?</p>
+          <Segmented options={['On point', 'Okay', 'Off']}
+            value={diet.quality === 'on' ? 'On point' : diet.quality === 'ok' ? 'Okay' : diet.quality === 'off' ? 'Off' : ''}
+            onPick={(opt) => patch({ diet: { quality: opt === 'On point' ? 'on' : opt === 'Okay' ? 'ok' : 'off' } })} />
+        </Pillar>
       </div>
 
-      <div className="space-y-4">
-        {/* Skin */}
-        <Pillar icon="🌸" title="Skin" subtitle="Your daily glow"
-          color="rose" status={r.skincareAM && r.skincarePM ? 'Glowing ✨' : ''}>
-          <div className="flex gap-2">
-            <Pill on={r.skincareAM} color="rose" onClick={() => patch({ routines: { skincareAM: !r.skincareAM } })}>☀️ Morning</Pill>
-            <Pill on={r.skincarePM} color="rose" onClick={() => patch({ routines: { skincarePM: !r.skincarePM } })}>🌙 Evening</Pill>
-          </div>
-        </Pillar>
-
-        {/* Hair */}
-        <Pillar icon="💜" title="Hair" subtitle="As scheduled — every few days"
-          color="violet" status={r.haircare ? 'Done today' : ''}>
-          <Pill on={r.haircare} color="violet" onClick={() => patch({ routines: { haircare: !r.haircare } })}>
-            {r.haircare ? '✓ Cared for' : 'Wash / oil today'}
-          </Pill>
-        </Pillar>
-
-        {/* Body */}
-        <Pillar icon="💪" title="Body" subtitle="Lose fat · build muscle"
-          color="emerald" status={w.did ? `${w.type} ✓` : ''}>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {['Weights', 'Cardio', 'Walk', 'Rest'].map((opt) => (
-              <Pill key={opt} on={w.type === opt} color="emerald" onClick={() => patch({ workout: { did: opt !== 'Rest', type: opt } })}>{opt}</Pill>
-            ))}
-          </div>
-          <div className="flex items-center gap-3 rounded-xl bg-slate-950/40 px-3 py-2.5">
-            <span className="text-sm text-slate-300">⚖️ Weight today</span>
-            <input type="number" step="0.1" placeholder="kg" defaultValue={day.weight ?? ''}
-              key={day.weight ?? 'empty'}
-              onBlur={(e) => e.target.value !== '' && saveWeight(Number(e.target.value))}
-              className="w-20 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1.5 text-sm text-slate-200" />
-            {day.weight != null && <span className="text-xs text-emerald-400">logged</span>}
-          </div>
-          {(state.weightLog || []).length >= 2 && (
-            <div className="mt-3"><WeightChart log={state.weightLog} /></div>
-          )}
-        </Pillar>
-
-        {/* Diet */}
-        <Pillar icon="🥗" title="Diet" subtitle="How you fuel the change"
-          color="amber" status={diet.quality ? labelFor(diet.quality) : ''}>
-          <p className="mb-2 text-sm text-slate-300">How did you eat today?</p>
-          <div className="flex gap-2">
-            <Pill on={diet.quality === 'on'} color="amber" onClick={() => patch({ diet: { quality: 'on' } })}>🟢 On point</Pill>
-            <Pill on={diet.quality === 'ok'} color="amber" onClick={() => patch({ diet: { quality: 'ok' } })}>🟡 Okay</Pill>
-            <Pill on={diet.quality === 'off'} color="amber" onClick={() => patch({ diet: { quality: 'off' } })}>🔴 Off</Pill>
-          </div>
-        </Pillar>
-      </div>
-
-      <p className="mt-8 text-center text-xs text-slate-600">Small things, every day. You've got this. 💚</p>
+      <p className="mt-9 text-center text-[12px] text-[#a39c8d]">Consistency over intensity. One day at a time.</p>
     </div>
   )
 }
 
-const COLORS = {
-  rose: { border: 'border-rose-900/40', glow: 'from-rose-950/30', text: 'text-rose-300', on: 'bg-rose-500 text-slate-950' },
-  violet: { border: 'border-violet-900/40', glow: 'from-violet-950/30', text: 'text-violet-300', on: 'bg-violet-500 text-slate-950' },
-  emerald: { border: 'border-emerald-900/40', glow: 'from-emerald-950/30', text: 'text-emerald-300', on: 'bg-emerald-500 text-slate-950' },
-  amber: { border: 'border-amber-900/40', glow: 'from-amber-950/30', text: 'text-amber-300', on: 'bg-amber-500 text-slate-950' },
+/* ---------- Coach logic: time + state aware ---------- */
+function buildCoach({ hour, minute, day, profile }) {
+  const r = day.routines, w = day.workout, diet = day.diet || {}
+  const steps = day.steps || 0, target = profile.stepTarget
+  const trained = w.did && w.type !== 'Rest'
+  const t = fmtTime(hour, minute)
+  const eyebrow = `Today — ${t}`
+  const phase = hour < 11 ? 'morning' : hour < 17 ? 'midday' : hour < 21 ? 'evening' : 'night'
+  const blank = !r.skincareAM && !r.skincarePM && !r.haircare && !w.did && day.weight == null && !diet.quality
+
+  if (phase === 'morning') {
+    if (blank) return { eyebrow, headline: `Good morning. Let’s set up your day.`, support: `Begin with your morning skincare, then we’ll line up training and steps. One thing at a time — no rush.`, action: { label: 'Start with skin', target: 'skin' } }
+    if (!r.skincareAM) return { eyebrow, headline: `First, your morning routine.`, support: `Two minutes of skincare to start clean. Then we move.`, action: { label: 'Mark morning done', target: 'skin' } }
+    if (!trained) return { eyebrow, headline: `When are you training today?`, support: `Three sessions a week is the floor for holding muscle while you lean out. Set the intention now.`, action: { label: 'Plan training', target: 'movement' } }
+    return { eyebrow, headline: `You’re set up well.`, support: `Keep the steps ticking through the day, and make the next meal an easy win.`, action: { label: 'Log movement', target: 'movement' } }
+  }
+  if (phase === 'midday') {
+    if (steps < target * 0.4) return { eyebrow, headline: `You’re at ${steps.toLocaleString()} steps.`, support: `A little behind for midday. Ten minutes on your feet now beats cramming it after dark.`, action: { label: 'Log a walk', target: 'movement' } }
+    if (!trained) return { eyebrow, headline: `Have you trained yet?`, support: `Don’t let the afternoon drift — a session now protects your muscle and your deficit.`, action: { label: 'Log training', target: 'movement' } }
+    if (!diet.quality) return { eyebrow, headline: `How’s the eating going?`, support: `Check in on lunch. Holding the line through the afternoon is half the work.`, action: { label: 'Log diet', target: 'diet' } }
+    return { eyebrow, headline: `Good momentum.`, support: `You’re on track. Water up, stay steady into the evening.`, action: null }
+  }
+  if (phase === 'evening') {
+    if (steps < target * 0.6) {
+      return { eyebrow, headline: `It’s ${t}, and you’re at ${steps.toLocaleString()} of ${target.toLocaleString()} steps.`, support: `A 30–40 minute walk closes most of that gap. This is exactly where steady fat loss is won — don’t let it slide.`, action: { label: 'I’ll walk now', target: 'movement' } }
+    }
+    if (!trained) return { eyebrow, headline: `The day’s closing, and you haven’t trained.`, support: `Even thirty minutes of lifting protects muscle while you’re cutting. Worth showing up for.`, action: { label: 'Log training', target: 'movement' } }
+    if (!diet.quality) return { eyebrow, headline: `How did eating go today?`, support: `Be honest with it — logging it is how we keep the trend pointed the right way.`, action: { label: 'Log diet', target: 'diet' } }
+    if (!r.skincarePM) return { eyebrow, headline: `Wind down with your evening skincare.`, support: `Close the loop. Your skin does its repair work overnight.`, action: { label: 'Mark evening done', target: 'skin' } }
+    return { eyebrow, headline: `You’ve handled today.`, support: `Skin, training, food — all tended. This is the consistency that gets you to your goal.`, action: null }
+  }
+  if (!r.skincarePM) return { eyebrow, headline: `Before bed: evening skincare.`, support: `Last thing for the day, then rest — recovery is when muscle is actually built.`, action: { label: 'Mark it done', target: 'skin' } }
+  if (!diet.quality) return { eyebrow, headline: `Quick check: how did you eat?`, support: `One tap and you’re done. It keeps tomorrow’s plan honest.`, action: { label: 'Log diet', target: 'diet' } }
+  return { eyebrow, headline: `Rest up.`, support: `Weigh in first thing tomorrow — we track the trend, not the daily noise.`, action: null }
 }
 
-function Pillar({ icon, title, subtitle, color, status, children }) {
-  const c = COLORS[color]
+function fmtTime(h, m) {
+  const ap = h < 12 ? 'AM' : 'PM'
+  const hr = ((h + 11) % 12) + 1
+  return `${hr}:${String(m).padStart(2, '0')} ${ap}`
+}
+
+/* ---------- UI ---------- */
+function Pillar({ id, title, note, children }) {
   return (
-    <section className={`rounded-3xl border ${c.border} bg-gradient-to-br ${c.glow} to-slate-900/40 p-5`}>
-      <header className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-white">{icon} {title}</h2>
-          <p className="text-xs text-slate-400">{subtitle}</p>
-        </div>
-        {status && <span className={`text-xs font-medium ${c.text}`}>{status}</span>}
+    <section id={id} className="rounded-3xl border border-[#e6dfd0] bg-[#fbf9f3] p-5 shadow-[0_2px_10px_-6px_rgba(60,55,40,0.25)]">
+      <header className="mb-3">
+        <h2 className="font-display text-xl font-semibold text-[#23211c]">{title}</h2>
+        <p className="text-[12px] text-[#8a8474]">{note}</p>
       </header>
       {children}
     </section>
   )
 }
 
-function Pill({ on, color, onClick, children }) {
-  const c = COLORS[color]
+function Segmented({ options, value, onPick, multi }) {
+  const isOn = (opt) => (multi ? value.includes(opt) : value === opt)
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-4 py-2.5 text-sm font-medium transition active:scale-95 ${
-        on ? c.on : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          onClick={() => onPick(opt)}
+          className={`rounded-full px-4 py-2 text-sm font-medium transition active:scale-95 ${
+            isOn(opt)
+              ? 'bg-[#3d4a32] text-[#f4f1e8]'
+              : 'border border-[#e0d9c9] bg-[#f3efe6] text-[#4a463c] hover:bg-[#ebe6da]'
+          }`}
+        >
+          {opt}
+        </button>
+      ))}
+    </div>
   )
 }
 
-function labelFor(q) {
-  return q === 'on' ? 'On point 🟢' : q === 'ok' ? 'Okay 🟡' : 'Off track 🔴'
+function Field({ label, children }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-28 text-[13px] text-[#6f6a5d]">{label}</span>
+      {children}
+    </div>
+  )
+}
+
+function NumInput({ value, placeholder, step, onCommit }) {
+  return (
+    <input
+      type="number" step={step} placeholder={placeholder} defaultValue={value}
+      key={value === '' ? 'e' : value}
+      onBlur={(e) => e.target.value !== '' && onCommit(Number(e.target.value))}
+      className="w-24 rounded-xl border border-[#ddd5c5] bg-white px-3 py-1.5 text-sm text-[#23211c] outline-none focus:border-[#3d4a32]"
+    />
+  )
 }
 
 function WeightChart({ log }) {
   return (
-    <ResponsiveContainer width="100%" height={140}>
-      <LineChart data={log} margin={{ top: 6, right: 10, bottom: 0, left: -22 }}>
-        <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(d) => d.slice(5)} />
-        <YAxis domain={['auto', 'auto']} tick={{ fill: '#94a3b8', fontSize: 10 }} width={32} />
-        <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 12, color: '#e2e8f0' }} />
-        <Line type="monotone" dataKey="kg" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3 }} />
+    <ResponsiveContainer width="100%" height={130}>
+      <LineChart data={log} margin={{ top: 6, right: 8, bottom: 0, left: -24 }}>
+        <XAxis dataKey="date" tick={{ fill: '#a39c8d', fontSize: 10 }} tickFormatter={(d) => d.slice(5)} axisLine={{ stroke: '#e0d9c9' }} tickLine={false} />
+        <YAxis domain={['auto', 'auto']} tick={{ fill: '#a39c8d', fontSize: 10 }} width={32} axisLine={false} tickLine={false} />
+        <Tooltip contentStyle={{ background: '#23291f', border: 'none', borderRadius: 12, color: '#f4f1e8', fontSize: 12 }} />
+        <Line type="monotone" dataKey="kg" stroke="#3d4a32" strokeWidth={2.5} dot={{ r: 3, fill: '#3d4a32' }} />
       </LineChart>
     </ResponsiveContainer>
   )
 }
 
 function Centered({ children }) {
-  return <div className="flex min-h-screen items-center justify-center px-6 text-center text-slate-400">{children}</div>
+  return <div className="flex min-h-screen items-center justify-center px-6 text-center text-[#8a8474]">{children}</div>
 }
 function prettyToday(iso) {
   const [y, m, d] = iso.split('-').map(Number)
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${months[m - 1]} ${d}, ${y}`
+  return `${months[m - 1]} ${d} · ${y}`
 }
