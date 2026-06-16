@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 /* ---------- data layer: localStorage-first, best-effort backend mirror ---------- */
@@ -24,6 +24,7 @@ function deepMerge(t, p) {
   return t
 }
 const isoToday = () => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
+let _syncTimer = null
 
 export default function App() {
   const [state, setState] = useState(null)
@@ -31,40 +32,63 @@ export default function App() {
   const now = new Date(); const hour = now.getHours(); const minute = now.getMinutes()
   const [override, setOverride] = useState(null)
 
+  // Push the local copy to the backend and adopt the merged truth. No-op offline.
+  const doSync = useCallback(async () => {
+    const local = loadLocal(); if (!local) return
+    try {
+      const res = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(local) })
+      if (!res.ok) return
+      const merged = await res.json()
+      saveLocal(merged); setState(merged)
+    } catch { /* offline — keep working from localStorage, sync later */ }
+  }, [])
+  const scheduleSync = useCallback(() => { clearTimeout(_syncTimer); _syncTimer = setTimeout(doSync, 1500) }, [doSync])
+
   useEffect(() => {
     const local = loadLocal()
-    if (local) { if (!local.profile?.waterTarget) local.profile.waterTarget = 8; setState(local); return }
-    fetch('/api/state').then((r) => (r.ok ? r.json() : null)).then((b) => {
-      const init = b || DEFAULT_STATE; if (!init.profile.waterTarget) init.profile.waterTarget = 8
-      setState(init); saveLocal(init)
-    }).catch(() => { setState(DEFAULT_STATE); saveLocal(DEFAULT_STATE) })
-  }, [])
+    if (local) {
+      if (!local.profile?.waterTarget) local.profile.waterTarget = 8
+      setState(local)
+      doSync() // push offline changes, pull merged truth
+    } else {
+      // No local copy (first run, or it was lost/cleared) → restore from the backend.
+      fetch('/api/state').then((r) => (r.ok ? r.json() : null)).then((b) => {
+        const init = b || DEFAULT_STATE; if (!init.profile.waterTarget) init.profile.waterTarget = 8
+        setState(init); saveLocal(init)
+      }).catch(() => { setState(DEFAULT_STATE); saveLocal(DEFAULT_STATE) })
+    }
+    const onOnline = () => doSync()
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [doSync])
 
   function patch(p) {
     setState((prev) => {
       const next = clone(prev)
       next.days[today] = next.days[today] || defaultDay()
       deepMerge(next.days[today], p)
+      next.days[today]._ts = Date.now()
       saveLocal(next)
-      fetch('/api/day', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: today, patch: p }) }).catch(() => {})
       return next
     })
     setOverride(null)
+    scheduleSync()
   }
   function saveWeight(kg) {
     setState((prev) => {
       const next = clone(prev)
       next.days[today] = next.days[today] || defaultDay()
       next.days[today].weight = kg
+      next.days[today]._ts = Date.now()
       next.weightLog = next.weightLog || []
       const e = next.weightLog.find((w) => w.date === today)
       if (e) e.kg = kg; else next.weightLog.push({ date: today, kg })
       next.weightLog.sort((a, b) => a.date.localeCompare(b.date))
       saveLocal(next)
-      fetch('/api/weight', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: today, kg }) }).catch(() => {})
       return next
     })
     setOverride(null)
+    scheduleSync()
   }
 
   const day = useMemo(() => (state ? { ...defaultDay(), ...(state.days?.[today] || {}) } : null), [state, today])

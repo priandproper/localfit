@@ -64,6 +64,31 @@ app.get('/api/state', async (_req, res) => {
   catch (e) { res.status(500).json({ error: String(e) }) }
 })
 
+// Day-level last-write-wins merge (by each day's _ts), weightLog union by date.
+function mergeStates(server, client) {
+  const out = { profile: client.profile || server.profile || {}, days: { ...(server.days || {}) }, weightLog: [] }
+  for (const [date, cd] of Object.entries(client.days || {})) {
+    const sd = out.days[date]
+    if (!sd || (cd._ts || 0) >= (sd._ts || 0)) out.days[date] = cd
+  }
+  const byDate = {}
+  for (const e of server.weightLog || []) byDate[e.date] = e
+  for (const e of client.weightLog || []) byDate[e.date] = e
+  out.weightLog = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date))
+  return out
+}
+
+// Two-way reconcile: client pushes its full state, gets back the merged truth.
+app.post('/api/sync', async (req, res) => {
+  try {
+    let server
+    try { server = await readState() } catch { server = { days: {}, weightLog: [] } }
+    const merged = mergeStates(server, req.body || {})
+    await persist(merged)
+    res.json(merged)
+  } catch (e) { res.status(500).json({ error: String(e) }) }
+})
+
 // Patch today's (or any day's) log: { date?, patch }
 app.post('/api/day', async (req, res) => {
   try {
@@ -105,6 +130,7 @@ app.post('/api/health', async (req, res) => {
     const { date = localDate(), steps, workouts } = req.body || {}
     const state = await readState()
     const day = ensureDay(state, date)
+    day._ts = Date.now()
     if (steps != null) day.steps = Number(steps) || 0
     if (Array.isArray(workouts) && workouts.length) {
       day.workout = { did: true, type: String(workouts[0].type || workouts[0] || 'workout'), source: 'health' }
