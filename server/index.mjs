@@ -1,8 +1,9 @@
 // localfit local backend — serves wellness state and accepts daily logs +
 // Apple Health pushes from an iOS Shortcut. Local-first; no cloud.
 import express from 'express'
+import https from 'node:https'
 import { readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,6 +15,27 @@ const distDir = resolve(repoRoot, 'dist')
 
 const PORT = process.env.PORT || 8788
 const app = express()
+
+// CORS + Private Network Access: the hosted Pages build (public origin) reaches
+// this backend on the home LAN. Reflect allowed origins and answer PNA preflight
+// so the browser permits the public->private request.
+const ALLOWED_ORIGINS = new Set([
+  'https://andytambe31.github.io',
+  'http://localhost:5174',
+  'http://localhost:8788',
+  'https://Aniruddhas-Mac-mini.local:8788',
+])
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  // Reflect an allowlisted origin; same-origin/no-origin requests need no header.
+  if (origin && ALLOWED_ORIGINS.has(origin)) res.setHeader('Access-Control-Allow-Origin', origin)
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  if (req.method === 'OPTIONS') return res.sendStatus(204)
+  next()
+})
+
 app.use(express.json())
 
 const readState = async () => JSON.parse(await readFile(statePath, 'utf8'))
@@ -80,7 +102,28 @@ function mergeStates(server, client) {
   for (const e of client.bodyFatLog || []) bf[e.date] = e
   out.bodyFatLog = Object.values(bf).sort((a, b) => a.date.localeCompare(b.date))
   out.rewardsClaimed = { ...(server.rewardsClaimed || {}), ...(client.rewardsClaimed || {}) }
+  out.activity = mergeActivity(server.activity, client.activity)
   return out
+}
+
+// Union both activity arrays, sort by start, coalesce intervals that overlap or
+// sit within 6 min of each other, and prune anything older than 48h relative to
+// the newest timestamp seen. Keeps the sleep-inference signal compact + accurate.
+function mergeActivity(a = [], b = []) {
+  const all = [...(a || []), ...(b || [])]
+    .filter((iv) => iv && typeof iv.s === 'number' && typeof iv.e === 'number' && iv.e >= iv.s)
+    .sort((x, y) => x.s - y.s)
+  if (!all.length) return []
+  const GAP = 6 * 60 * 1000
+  const merged = [{ s: all[0].s, e: all[0].e }]
+  for (let i = 1; i < all.length; i++) {
+    const last = merged[merged.length - 1]
+    if (all[i].s <= last.e + GAP) last.e = Math.max(last.e, all[i].e)
+    else merged.push({ s: all[i].s, e: all[i].e })
+  }
+  const maxTs = merged[merged.length - 1].e
+  const cutoff = maxTs - 48 * 60 * 60 * 1000
+  return merged.filter((iv) => iv.e >= cutoff)
 }
 
 // Two-way reconcile: client pushes its full state, gets back the merged truth.
@@ -150,4 +193,17 @@ if (existsSync(distDir)) {
   app.get('*', (_req, res) => res.sendFile(resolve(distDir, 'index.html')))
 }
 
-app.listen(PORT, () => console.log(`[localfit] http://localhost:${PORT}`))
+// Optional HTTPS: needed because the hosted Pages origin is HTTPS, so the
+// backend it talks to must be HTTPS too (no mixed content). Provide certs at
+// certs/localfit.pem + certs/localfit-key.pem (or TLS_CERT/TLS_KEY), else
+// fall back to plain HTTP for same-origin local use.
+const certPath = process.env.TLS_CERT || resolve(repoRoot, 'certs/localfit.pem')
+const keyPath = process.env.TLS_KEY || resolve(repoRoot, 'certs/localfit-key.pem')
+if (existsSync(certPath) && existsSync(keyPath)) {
+  const cert = readFileSync(certPath)
+  const key = readFileSync(keyPath)
+  https.createServer({ key, cert }, app).listen(PORT, () =>
+    console.log(`[localfit] https://localhost:${PORT} (TLS)`))
+} else {
+  app.listen(PORT, () => console.log(`[localfit] http://localhost:${PORT}`))
+}

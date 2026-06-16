@@ -10,7 +10,9 @@
     "predev": "npm run sync",
     "dev": "concurrently -k -n api,web -c green,cyan \"npm:server\" \"npm:vite\"",
     "build": "npm run sync && vite build",
-    "start": "node server/index.mjs"
+    "build:pages": "VITE_BASE=/localfit/ VITE_API_BASE=https://Aniruddhas-Mac-mini.local:8788 vite build",
+    "start": "node server/index.mjs",
+    "start:https": "TLS_CERT=certs/localfit.pem TLS_KEY=certs/localfit-key.pem node server/index.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

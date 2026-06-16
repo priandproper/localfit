@@ -22,3 +22,46 @@ body {
   font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
   letter-spacing: -0.015em;
 }
+
+/* ---------- subtle motion ---------- */
+/* Smooth, quiet feedback on every tappable control. */
+button { transition: transform .14s ease, opacity .14s ease, background-color .18s ease, color .18s ease; }
+button:active { transform: scale(0.97); }
+
+@keyframes appFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes skIn       { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes skOut      { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(0.985); } }
+@keyframes skAdvance  { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes skBack     { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes skFade     { from { opacity: 0; } to { opacity: 1; } }
+
+/* View / modal entrances. */
+.fade-in        { animation: appFadeIn .28s cubic-bezier(.22,.61,.36,1) both; }
+.sk-takeover-in  { animation: skIn .26s cubic-bezier(.22,.61,.36,1) both; }
+.sk-takeover-out { animation: skOut .22s ease both; }
+
+/* Per-step card transitions inside the skincare flow. */
+.sk-advance { animation: skAdvance .26s cubic-bezier(.22,.61,.36,1) both; }
+.sk-back    { animation: skBack .26s cubic-bezier(.22,.61,.36,1) both; }
+.sk-skip    { animation: skFade .22s ease both; }
+
+/* Opening splash: wordmark settles in, then the whole screen fades to the app. */
+@keyframes splashWord { 0% { opacity: 0; transform: translateY(8px) scale(0.985); letter-spacing: .08em; } 60% { opacity: 1; } 100% { opacity: 1; transform: none; letter-spacing: -.015em; } }
+@keyframes splashRule { 0% { transform: scaleX(0); opacity: 0; } 100% { transform: scaleX(1); opacity: 1; } }
+@keyframes splashOut  { to { opacity: 0; } }
+.splash-word { animation: splashWord .85s cubic-bezier(.22,.61,.36,1) both; }
+.splash-rule { transform-origin: center; animation: splashRule .7s cubic-bezier(.22,.61,.36,1) .25s both; }
+.splash-out  { animation: splashOut .5s ease both; pointer-events: none; }
+
+/* Gentle pull-the-eye pulse for a time-sensitive task tile. */
+@keyframes attnPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(61,74,50,0); } 50% { box-shadow: 0 0 0 5px rgba(61,74,50,0.16); } }
+.pulse-attention { animation: attnPulse 1.9s ease-in-out infinite; }
+
+/* Goal rings: the progress arc fills from empty on mount. */
+.score-ring-arc { transition: stroke-dashoffset .9s cubic-bezier(.22,.61,.36,1); }
+
+@media (prefers-reduced-motion: reduce) {
+  button, .fade-in, .sk-takeover-in, .sk-takeover-out, .sk-advance, .sk-back, .sk-skip,
+  .splash-word, .splash-rule, .splash-out, .pulse-attention, .score-ring-arc { animation: none !important; transition: none !important; }
+  button:active { transform: none; }
+}
