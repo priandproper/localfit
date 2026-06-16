@@ -481,7 +481,7 @@ function estimateBF({ sex, height, neck, waist, hip }) {
   // Body Adiposity Index (Bergman 2011) — brings in hip
   if (hip > 0 && height > 0) parts.bai = hip / Math.pow(height / 100, 1.5) - 18
 
-  const w = { navy: 0.4, rfm: 0.4, bai: 0.2 }
+  const w = { navy: 0.45, rfm: 0.45, bai: 0.1 }
   let sum = 0, wsum = 0
   const breakdown = {}
   for (const k of ['navy', 'rfm', 'bai']) {
