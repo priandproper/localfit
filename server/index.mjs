@@ -92,9 +92,16 @@ app.post('/api/weight', async (req, res) => {
   } catch (e) { res.status(500).json({ error: String(e) }) }
 })
 
+// DEBUG: catch a misconfigured Shortcut doing a GET instead of a POST.
+app.get('/api/health', (req, res) => {
+  console.log('[health] ⚠ GET received — your Shortcut is using GET, but it must POST.')
+  res.json({ ok: false, hint: 'Use POST with a JSON body {"steps": <number>}' })
+})
+
 // Apple Health push from an iOS Shortcut: { date?, steps?, workouts? }
 app.post('/api/health', async (req, res) => {
   try {
+    console.log('[health] POST · content-type:', req.headers['content-type'], '· body:', JSON.stringify(req.body))
     const { date = localDate(), steps, workouts } = req.body || {}
     const state = await readState()
     const day = ensureDay(state, date)
