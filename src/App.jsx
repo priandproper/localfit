@@ -123,8 +123,17 @@ function buildCoach({ hour, minute, day, profile }) {
   const trained = w.did && w.type !== 'Rest'
   const t = fmtTime(hour, minute)
   const eyebrow = `Today — ${t}`
-  const phase = hour < 11 ? 'morning' : hour < 17 ? 'midday' : hour < 21 ? 'evening' : 'night'
+  const phase =
+    hour < 5 ? 'latenight'
+      : hour < 12 ? 'morning'
+        : hour < 17 ? 'midday'
+          : hour < 21 ? 'evening' : 'night'
   const blank = !r.skincareAM && !r.skincarePM && !r.haircare && !w.did && day.weight == null && !diet.quality
+
+  if (phase === 'latenight') {
+    if (!r.skincarePM) return { eyebrow, headline: `It’s late.`, support: `You’re up past midnight — time to wind down. Do your evening skincare and get to bed. Recovery is when fat loss and muscle repair actually happen.`, action: { label: 'Evening skincare', target: 'skin' } }
+    return { eyebrow, headline: `Get some rest.`, support: `It’s the middle of the night. Sleep is the most underrated part of any transformation — we’ll set the day up when you’re back on your feet.`, action: null }
+  }
 
   if (phase === 'morning') {
     if (blank) return { eyebrow, headline: `Good morning. Let’s set up your day.`, support: `Begin with your morning skincare, then we’ll line up training and steps. One thing at a time — no rush.`, action: { label: 'Start with skin', target: 'skin' } }
