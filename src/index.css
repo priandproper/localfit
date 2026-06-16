@@ -3,6 +3,10 @@
 :root { color-scheme: dark; }
 
 html, body, #root { height: 100%; }
+
+/* Hide scrollbar (still scrollable) */
+html { scrollbar-width: none; -ms-overflow-style: none; }
+::-webkit-scrollbar { width: 0; height: 0; display: none; }
 body {
   margin: 0;
   background: #0b0f1a;
