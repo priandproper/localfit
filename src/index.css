@@ -9,4 +9,6 @@ body {
   color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  touch-action: manipulation;       /* disable double-tap-to-zoom */
+  -webkit-text-size-adjust: 100%;   /* don't auto-scale text */
 }
