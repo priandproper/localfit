@@ -6,11 +6,21 @@ updated as the project evolves.
 
 ## What localfit is
 
-A **personal wellness coach** (not a diary) for one user — Aniruddha. Primary goals: fat
-loss (**body fat %, never weight**), muscle, plus skincare, haircare, sleep, diet,
-movement. It must feel welcoming and guided (he dislikes logging), speak in an
-**authoritative, directive coaching voice**, work **offline**, and never lose data.
-Part of an app ecosystem (sibling: `faang-prep`/localcode; a budgeting app later).
+A **personal wellness coach** (not a diary) for a single user. Primary goals: fat loss
+(**body fat %, never weight**), muscle, plus skincare, haircare/regrowth, sleep, diet,
+movement. It must feel welcoming and guided (the user dislikes logging), speak in an
+**authoritative, directive coaching voice**, work **offline**, and never lose data. Part
+of an app ecosystem (sibling: `faang-prep`/localcode; a budgeting app later).
+
+The app is currently configured for a **female user** (see "Configuration" below):
+female-oriented defaults and body-fat targets, sex/age-aware body-comp math, no facial
+shave step, a hair-regrowth routine, **menstrual-cycle tracking**, and a diet coach that
+adapts when the user is on a **GLP-1** (e.g. Wegovy).
+
+> **Privacy: the repo is PUBLIC and the build is served on a public Pages site.** No
+> personal data (name, date of birth, weight, body-fat, measurements, medication status,
+> cycle dates) may live in source, `CLAUDE.md`, or anything committed. All of it is entered
+> in-app and stored only in the device's localStorage. Keep `DEFAULT_STATE` generic.
 
 ## Run it
 
@@ -70,9 +80,45 @@ Backend has CORS + `Access-Control-Allow-Private-Network: true` for the Pages or
   card transitions (`sk-advance`/`sk-back`/`sk-skip`), attention `pulse-attention`, goal
   ring fill (`score-ring-arc`).
 
+## Configuration (female user) — all generic, NO personal data
+
+- **Profile defaults** (`DEFAULT_STATE` + `ensureProfile` in App.jsx, privacy-safe):
+  `name '', sex 'female', stepTarget 8000, proteinTarget 120, bodyFatTarget 22 (a 12%
+  target is unsafe for women), bodyFatDeadline '2027-12-31', glp1 false, cycle {avgLength
+  28, periodLength 5, enabled true}`. Empty `weightLog/bodyFatLog/cycleLog`.
+- **Personal data is entered in-app**, never committed: the **"About you"** editor
+  (`ProfileModal`, opened from the header person icon) sets name, date of birth, sex,
+  height, the **GLP-1 toggle**, and targets; weight via the weight card; body-fat via the
+  body-fat modal (tape estimate **or** a "known %" field for DEXA/SECA/InBody); cycle via
+  the cycle card.
+- **Age** is derived from `profile.dob` in `diet.js tdee()` (`ageFromDob`), falling back to
+  `profile.age` then 30. Body-fat math (`estimateBF`, `bfCategory`) is sex-aware.
+- **Shave removed** from the skincare engine (`skincare.js`: PRODUCTS/DEFAULT_OWNED/STEP_COPY,
+  `shaveState`/`lastShaveIso` deleted, `dueSummary` no longer returns `shaveDue`) and from
+  the coach + ProductsModal in App.jsx.
+- **Hair regrowth kept** (minoxidil + derma roller).
+- **GLP-1-aware coach** (`buildCoach`): when `profile.glp1` is on (toggled in "About you"),
+  diet coaching flips from "stop eating, hold the ceiling" to "eat enough protein to protect
+  muscle" (the `eatEnough` nudge; the over-ceiling nag is suppressed when `glp1`).
+
+## Menstrual-cycle tracking (`src/cycle.js`, pure)
+
+- `cyclePhase(dateIso, state)` derives phase from `state.cycleLog` (period-start ISO dates) +
+  `profile.cycle`. Phases: **menstrual** (ease), **follicular** (push), **ovulation** (peak),
+  **luteal** (steady, late-luteal=ease). Past the expected length with no new log →
+  `overdue` read (GLP-1s commonly delay/pause cycles, so it coaches "log it when it comes"
+  rather than asserting a phase). `observedLength` averages the last ≤6 logged gaps once 2+
+  exist; else uses `profile.cycle.avgLength`. Period starts are entered in-app, not seeded.
+  `waterRetentionLikely()` helper for scale/tape caveats.
+- **Wiring:** `buildSession` (train.js) attaches `session.cycle` (shown on the TrainFlow gate
+  for ease/peak tones); `buildCoach` softens the morning training push during ease phases and
+  appends phase lines; `CycleCard` (App.jsx, above GoalsSection) shows phase/day/next-period,
+  logs period starts (`logPeriodStart`/`removePeriodStart` → `cycleLog`), and edits
+  `avgLength`/`periodLength`.
+
 ## Data model
 
-`state = { profile, days{}, weightLog[], bodyFatLog[], activity[], rewardsClaimed{} }`
+`state = { profile, days{}, weightLog[], bodyFatLog[], activity[], rewardsClaimed{}, cycleLog[] }`
 
 - `profile`: `name, stepTarget(10000), gymTargetPerWeek(3), waterTarget(8),
   bodyFatTarget(12), bodyFatDeadline('2026-12-31'), sleepTargetHours(7), bedGoal('23:30'),
@@ -144,11 +190,14 @@ public/sw.js, manifest.webmanifest, icon.svg  PWA shell
 
 ## Gotchas / notes
 
-- The working tree's `data/state.json` is the owner's REAL data (height 170, sex male,
-  measurements neck38/waist94/hip110, bodyFatLog 26.6%). It's gitignored and scrubbed from
-  history — never re-add it. A stray `rewardsClaimed:{"7":...}` from old testing exists in
-  his localStorage (cosmetic; union-merge can't delete it — a "reset rewards" action was
-  offered).
+- The working tree may contain a local, **gitignored** `data/state.json` with real personal
+  data. It must **never** be committed (gitignored + scrubbed from history), and the runtime
+  no longer reads it (sync retired). User data comes from `DEFAULT_STATE` on a fresh device
+  and lives in localStorage thereafter.
+- **The app is localStorage-first**, so a device keeps whatever's already in `localfit-state`.
+  Editing code defaults does **not** retroactively change an existing device's stored state —
+  to adopt new defaults, start fresh (clear site data / reinstall the PWA) or Import a backup.
+  Personal facts are then entered via the "About you" editor, weight/body-fat/cycle cards.
 - `npm run build` runs a `sync` step that copies `data/state.json` → `public/state.json`
   locally; CI uses `npx vite build` directly to avoid bundling any data.
 - Sleep scores need a few days of evening/morning app opens before they're meaningful;

@@ -173,6 +173,16 @@ function observedTDEE(state) {
 // Two-stage TDEE: a formula estimate (Katch-McArdle when body fat is known, else
 // Mifflin-St Jeor), blended toward the observed value as usable data accrues.
 // confidence: low (formula only) · medium (threshold met) · high (28d of data).
+// Age in whole years from an ISO date of birth, or null if absent/invalid.
+function ageFromDob(dob) {
+  if (!dob) return null
+  const b = new Date(dob); if (isNaN(b.getTime())) return null
+  const now = new Date()
+  let a = now.getFullYear() - b.getFullYear()
+  const m = now.getMonth() - b.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--
+  return a > 0 && a < 120 ? a : null
+}
 export function tdee(state) {
   const kg = latest(state.weightLog, 'kg')
   if (!kg) return null
@@ -181,7 +191,7 @@ export function tdee(state) {
   let bmr, method
   if (bf != null) { bmr = 370 + 21.6 * (kg * (1 - bf / 100)); method = 'Katch-McArdle' }
   else {
-    const h = state.profile?.height || 170, age = state.profile?.age || 30
+    const h = state.profile?.height || 170, age = ageFromDob(state.profile?.dob) || state.profile?.age || 30
     bmr = 10 * kg + 6.25 * h - 5 * age + (state.profile?.sex === 'female' ? -161 : 5)
     method = 'Mifflin-St Jeor'
   }

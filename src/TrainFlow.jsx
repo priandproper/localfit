@@ -62,6 +62,12 @@ export default function TrainFlow({ dateIso, state, hour = 0, minute = 0, onPers
           {!rest && session.emphasisReason && (
             <p className="mt-2 text-[14px] leading-relaxed text-[#9aa581]">{session.emphasisReason}</p>
           )}
+          {!rest && session.cycle && (session.cycle.tone === 'ease' || session.cycle.tone === 'peak') && (
+            <div className="mt-4 rounded-2xl border border-[#3a4a2c] bg-[#2b3422] px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-[#9aa581]">{session.cycle.label}</p>
+              <p className="mt-1 text-[14px] leading-relaxed text-[#dfe6cf]">{session.cycle.note}</p>
+            </div>
+          )}
           {!rest && (
             <p className="mt-5 text-[13px] text-[#8c9472]">
               {session.exercises.length} exercises · about {estimateSessionMinutes(session)} min. Once you start, you're in until you finish.

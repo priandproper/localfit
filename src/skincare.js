@@ -4,7 +4,7 @@
  * works offline and survives sync — no separate mutable "lastDone".
  */
 
-// Product catalog. `when`: 'am' | 'pm' | 'both'. `kind`: 'daily' | 'active' | 'shave'.
+// Product catalog. `when`: 'am' | 'pm' | 'both'. `kind`: 'daily' | 'active'.
 // Actives carry an `unlock` week and (when scheduled) a `days` weekday list (0=Sun..6=Sat).
 export const PRODUCTS = [
   { id: 'cleanser', name: 'Cleanser', when: 'both', kind: 'daily' },
@@ -18,17 +18,15 @@ export const PRODUCTS = [
   { id: 'retinoid', name: 'Adapalene 0.1%', when: 'pm', kind: 'active', unlock: 3, days: [2, 5, 0], cap: 3, why: 'pigmentation + texture' },
   { id: 'azelaic', name: 'Azelaic acid', when: 'pm', kind: 'active', unlock: 4, optional: true, why: 'pigmentation (optional)' },
   { id: 'facialoil', name: 'Facial oil', when: 'pm', kind: 'daily', optional: true, why: 'overnight barrier (optional)' },
-  { id: 'shave', name: 'Shave', when: 'am', kind: 'shave' },
 ]
 export const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]))
 
 // Default ownership for a fresh profile.
-export const DEFAULT_OWNED = ['cleanser', 'moisturizer', 'spf', 'guasha', 'shave']
+export const DEFAULT_OWNED = ['cleanser', 'moisturizer', 'spf', 'guasha']
 
 // Step copy. Title = imperative; instruction = one calm sentence.
 const STEP_COPY = {
   cleanser: { title: 'Cleanse', instruction: 'Wash with lukewarm water and pat dry.' },
-  shave: { title: 'Shave', instruction: 'Shave with the grain, then rinse cool.' },
   vitc: { title: 'Apply Vitamin C', instruction: 'A few drops to a dry face, avoid the eyes.' },
   niacinamide: { title: 'Apply niacinamide', instruction: 'A thin layer over the whole face.' },
   eyeserum: { title: 'Apply eye serum', instruction: 'Tap a small amount gently under each eye.' },
@@ -57,8 +55,8 @@ export function weeksSinceStart(dateIso, startedDate) {
   return Math.max(0, Math.floor(daysBetween(startedDate, dateIso) / 7))
 }
 
-// Is a product owned? Shave is always owned.
-const isOwned = (id, owned) => id === 'shave' || (owned || []).includes(id)
+// Is a product owned?
+const isOwned = (id, owned) => (owned || []).includes(id)
 
 // Is a product available (owned + unlocked) on this date?
 function isAvailable(prod, dateIso, state) {
@@ -74,22 +72,6 @@ function mkStep(id, due, extra = {}) {
   const c = STEP_COPY[id] || { title: id, instruction: '' }
   const p = PRODUCT_BY_ID[id]
   return { id, title: c.title, instruction: c.instruction, kind: p?.kind || 'daily', due, ...extra }
-}
-
-// ---- shave cadence: rolling every-2-days, anchored to last actual shave ----
-function lastShaveIso(dateIso, state, lookback = 30) {
-  for (let i = 1; i <= lookback; i++) {
-    const iso = shift(dateIso, -i)
-    if (stepDone(state.days?.[iso], 'am', 'shave')) return iso
-  }
-  return null
-}
-export function shaveState(dateIso, state) {
-  if (!isOwned('shave', state.profile?.skincare?.ownedProducts)) return { due: false, overdue: false }
-  const last = lastShaveIso(dateIso, state)
-  if (!last) return { due: true, overdue: false, last: null }
-  const gap = daysBetween(last, dateIso)
-  return { due: gap >= 2, overdue: gap > 2, last }
 }
 
 // Count this-week completions of an active from the logs (Mon-anchored week of dateIso).
@@ -170,12 +152,6 @@ export function planForDay(dateIso, state) {
   // AM
   const am = []
   if (avail('cleanser')) am.push(mkStep('cleanser', 'daily'))
-  const shave = shaveState(dateIso, state)
-  if (shave.due) {
-    am.push(mkStep('shave', 'shave', shave.overdue
-      ? { overdue: true, title: 'Shave', instruction: "You're past due — shave today, with the grain, then rinse cool." }
-      : {}))
-  }
   if (avail('vitc')) am.push(mkStep('vitc', 'active'))
   if (avail('niacinamide')) am.push(mkStep('niacinamide', 'active'))
   if (avail('eyeserum')) am.push(mkStep('eyeserum', 'daily'))
@@ -210,12 +186,9 @@ export function dueSummary(dateIso, state) {
     return !steps.every((s) => logged[s.id] === 'done' || logged[s.id] === 'skipped')
   }
   const active = plan.pm.find((s) => s.due === 'active')
-  const shave = shaveState(dateIso, state)
   return {
     amPending: slotPending('am', plan.am),
     pmPending: slotPending('pm', plan.pm),
     tonightActive: active ? active.id : null,
-    shaveDue: shave.due,
-    shaveOverdue: shave.overdue,
   }
 }

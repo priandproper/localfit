@@ -16,6 +16,7 @@
  * the standard build weeks keep marching cleanly.
  * -------------------------------------------------------------------------- */
 import { trainingPhase } from './periodize'
+import { cyclePhase } from './cycle'
 
 // ---- libraries --------------------------------------------------------------
 
@@ -342,6 +343,7 @@ export function buildSession(state, todayIso, opts = {}) {
   const plan = DAY_PLAN[dayType]
   const emphasis = pickEmphasis(state, todayIso, dayType)
   const phase = trainingPhase(state, todayIso) // this week's strategic intent
+  const cyc = cyclePhase(todayIso, state) // menstrual-cycle context for the session note
 
   // Core lifts, plus emphasis isolation appended (deduped, capped).
   const ids = [...plan.core]
@@ -376,6 +378,8 @@ export function buildSession(state, todayIso, opts = {}) {
     warmup: WARMUPS[dayType],
     exercises,
     cooldown: COOLDOWNS[dayType],
+    // Menstrual-cycle guidance for today's session (null when unknown/disabled).
+    cycle: cyc.known && !cyc.overdue ? { phase: cyc.phase, label: cyc.label, tone: cyc.tone, note: cyc.coachNote } : null,
   }
 }
 

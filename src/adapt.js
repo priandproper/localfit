@@ -28,8 +28,8 @@ function neededRate(state, today) {
   const kg = latest(state.weightLog, 'kg')
   const bf = latest(state.bodyFatLog, 'pct')
   if (!kg || bf == null) return null
-  const target = state.profile?.bodyFatTarget || 12
-  const deadline = state.profile?.bodyFatDeadline || '2026-12-31'
+  const target = state.profile?.bodyFatTarget || 22
+  const deadline = state.profile?.bodyFatDeadline || '2027-12-31'
   const lose = kg - (kg * (1 - bf / 100)) / (1 - target / 100)
   const weeksLeft = (day(deadline) - day(today)) / (7 * 86400000)
   return lose > 0 && weeksLeft > 0 ? lose / weeksLeft : 0

@@ -13,23 +13,41 @@ import { LOCATIONS, defaultLocation, pantryFor, effectivePantry, calorieTarget, 
 import RecipeBuilder from './RecipeBuilder'
 import { PRODUCTS, DEFAULT_OWNED, dueSummary } from './skincare'
 import { inferSleep, lastNightSleep, sleepScore, fmtDuration, fmtClock } from './sleep'
+import { cyclePhase } from './cycle'
 import { API_BASE } from './config'
 
 /* ---------- data layer: localStorage-first, best-effort backend mirror ---------- */
 const LS_KEY = 'localfit-state'
 const isoToday = () => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
+// IMPORTANT: this repo is PUBLIC and the built bundle is served on a public Pages
+// site, so DEFAULT_STATE must contain NO personal data — no name, date of birth,
+// weight, body-fat, measurements, medication status, or cycle dates. Those are
+// entered in-app (the "About you" editor, weight card, body-fat + cycle cards) and
+// live only in the device's localStorage. Defaults below are generic app config.
 const DEFAULT_STATE = {
-  profile: { name: 'Aniruddha', stepTarget: 10000, gymTargetPerWeek: 3, waterTarget: 8, bodyFatTarget: 12, bodyFatDeadline: '2026-12-31', sleepTargetHours: 7, bedGoal: '23:30', wakeGoal: '07:30', skincare: { ownedProducts: [...DEFAULT_OWNED], startedDate: isoToday() } },
+  profile: {
+    name: '', sex: 'female',
+    stepTarget: 8000, gymTargetPerWeek: 3, waterTarget: 8, proteinTarget: 120,
+    bodyFatTarget: 22, bodyFatDeadline: '2027-12-31',
+    sleepTargetHours: 7, bedGoal: '23:30', wakeGoal: '07:30',
+    glp1: false, // toggled on-device in "About you" if on a GLP-1 (shifts diet coaching to eating enough protein)
+    cycle: { avgLength: 28, periodLength: 5, enabled: true },
+    skincare: { ownedProducts: [...DEFAULT_OWNED], startedDate: isoToday() },
+  },
   days: {},
   weightLog: [],
   bodyFatLog: [],
+  cycleLog: [],
   activity: [],
 }
 const ensureProfile = (p = {}) => {
-  p.waterTarget ??= 8; p.bodyFatTarget ??= 12; p.bodyFatDeadline ??= '2026-12-31'
+  p.sex ??= 'female'
+  p.waterTarget ??= 8; p.bodyFatTarget ??= 22; p.bodyFatDeadline ??= '2027-12-31'
+  p.proteinTarget ??= 120
   p.sleepTargetHours ??= 7; p.bedGoal ??= '23:30'; p.wakeGoal ??= '07:30'
   p.trainStart ??= isoToday() // anchors the periodization macrocycle (Monday-aligned in the engine)
   p.supps ??= { enabled: [...DEFAULT_SUPPS] } // daily supplement stack, folded into AM/PM routines
+  p.cycle ??= { avgLength: 28, periodLength: 5, enabled: true }
   p.skincare ??= {}
   p.skincare.ownedProducts ??= [...DEFAULT_OWNED]
   p.skincare.startedDate ??= isoToday()
@@ -116,6 +134,7 @@ export default function App() {
   const [pending, setPending] = useState(false)
   const [lastBackup, setLastBackup] = useState(() => Number(localStorage.getItem('localfit-last-backup')) || null)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false) // "About you" editor (name, DOB, sex, GLP-1, targets)
   const [foodReview, setFoodReview] = useState(false) // dashboard shortcut → today's food
   const scheduleSync = () => {} // sync retired; kept as a no-op so write paths stay clean
 
@@ -240,6 +259,30 @@ export default function App() {
     setState((prev) => {
       const next = clone(prev)
       next.profile = { ...next.profile, ...p }
+      saveLocal(next)
+      return next
+    })
+    setPending(true)
+    scheduleSync()
+  }
+  // Log a period start date into the cycle log (deduped, sorted). Re-centres
+  // the cycle tracking. Defaults to today.
+  function logPeriodStart(iso = today) {
+    setState((prev) => {
+      const next = clone(prev)
+      next.cycleLog = next.cycleLog || []
+      if (!next.cycleLog.includes(iso)) next.cycleLog.push(iso)
+      next.cycleLog.sort((a, b) => a.localeCompare(b))
+      saveLocal(next)
+      return next
+    })
+    setPending(true)
+    scheduleSync()
+  }
+  function removePeriodStart(iso) {
+    setState((prev) => {
+      const next = clone(prev)
+      next.cycleLog = (next.cycleLog || []).filter((d) => d !== iso)
       saveLocal(next)
       return next
     })
@@ -497,6 +540,12 @@ export default function App() {
       <div className="mb-3 flex items-baseline justify-between">
         <span className="font-display text-lg font-semibold tracking-tight text-[#20201d]">localfit</span>
         <div className="flex items-center gap-2">
+          <button onClick={() => setProfileOpen(true)} aria-label="About you"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-[#d8cfba] text-[#6f6a5d] transition active:scale-95 hover:bg-[#ece6d8]">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+          </button>
           <BackupButton pending={pending} lastBackup={lastBackup} onOpen={() => setBackupOpen(true)} />
           <span className="text-[11px] uppercase tracking-[0.18em] text-[#a39c8d]">{prettyToday(today)}</span>
         </div>
@@ -614,6 +663,10 @@ export default function App() {
         )}
       </div>
 
+      {profile.cycle?.enabled !== false && (
+        <CycleCard state={state} profile={profile} today={today} onLogStart={logPeriodStart} onRemoveStart={removePeriodStart} onProfile={updateProfile} />
+      )}
+
       <GoalsSection state={state} profile={profile} today={today} onBodyFat={saveBodyFat} onProfile={updateProfile} onSleep={saveSleep} onManageSupps={() => setManageSupps(true)} />
 
       <RewardsSummary state={state} profile={profile} today={today} onOpen={() => setView('rewards')} />
@@ -641,6 +694,10 @@ export default function App() {
       )}
       {backupOpen && (
         <BackupSheet lastBackup={lastBackup} pending={pending} onExport={exportData} onImport={importData} onClose={() => setBackupOpen(false)} />
+      )}
+      {profileOpen && (
+        <ProfileModal profile={profile} onClose={() => setProfileOpen(false)}
+          onSave={(p) => { updateProfile(p); setProfileOpen(false) }} />
       )}
       {manageSupps && (
         <SuppsModal profile={profile} onClose={() => setManageSupps(false)}
@@ -1311,8 +1368,7 @@ function SkinStart({ label, done, primary, locked, hint, onClick }) {
 function ProductsModal({ profile, onClose, onSave }) {
   const [owned, setOwned] = useState(() => [...(profile.skincare?.ownedProducts || [])])
   const toggle = (id) => setOwned((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]))
-  // Shave is always owned and not user-managed here.
-  const list = PRODUCTS.filter((p) => p.id !== 'shave')
+  const list = PRODUCTS
   const inRoutine = list.filter((p) => owned.includes(p.id))
   const shopping = list.filter((p) => !owned.includes(p.id))
 
@@ -1753,7 +1809,7 @@ function activeName(id) {
 }
 function buildCoach({ hour, minute, day, profile, skinDue, lastSleep, state, today }) {
   const r = day.routines, w = day.workout
-  skinDue = skinDue || { amPending: !r.skincareAM, pmPending: !r.skincarePM, tonightActive: null, shaveDue: false }
+  skinDue = skinDue || { amPending: !r.skincareAM, pmPending: !r.skincarePM, tonightActive: null }
   const steps = day.steps || 0, target = profile.stepTarget, water = day.water || 0, wTarget = profile.waterTarget
   const t = fmtTime(hour, minute)
   const eyebrow = `Today — ${t}`
@@ -1765,10 +1821,24 @@ function buildCoach({ hour, minute, day, profile, skinDue, lastSleep, state, tod
   const dt = dayTotals(day)
   const ct = state ? calorieTarget(state) : null
   const over = ct && dt.kcal > ct.ceiling
+  const glp1 = !!profile.glp1 // appetite suppressed → coach toward eating enough protein, not a ceiling
+  const cyc = state ? cyclePhase(today, state) : { known: false }
   const trainedToday = w.session?.status === 'done'
   const session0 = state ? buildSession(state, today) : null
   const tcall = state ? decideEveningPriority(state, today, hour, minute) : null
   const move = (c) => ({ eyebrow, headline: c.headline, support: c.support, action: { target: 'movement' } })
+
+  // On a GLP-1 the day's risk is under-eating protein (muscle loss), not a calorie
+  // overrun. Surfaces in the evening once there's been time to eat.
+  const eatEnough = () => {
+    if (!glp1 || hour < 17) return null
+    if (dt.protein >= proteinTarget * 0.7) return null
+    return { eyebrow, headline: `Protein's the priority — ${Math.round(dt.protein)}g of ${proteinTarget}.`,
+      support: `Appetite runs low on the medication, so it's easy to undereat. Get a real protein source in (whey, Greek yogurt, eggs, chicken) — that's what protects your muscle while the fat comes off.`,
+      action: { target: 'diet' } }
+  }
+  // A gentle one-liner about today's cycle phase, appended where it helps.
+  const cycLine = cyc.known && !cyc.overdue ? cyc.line : null
 
   // Protein nudge when meaningfully behind pace for the time of day (no nag in the
   // morning when protein is naturally low).
@@ -1781,8 +1851,7 @@ function buildCoach({ hour, minute, day, profile, skinDue, lastSleep, state, tod
     return null
   }
   const skincareAM = () => {
-    const support = skinDue.shaveDue ? (skinDue.shaveOverdue ? `You're past due to shave — do it, then SPF before you leave.` : `Shave today, then SPF before you leave.`)
-      : `A few quiet minutes. SPF is the one that protects your progress.`
+    const support = `A few quiet minutes. SPF is the one that protects your progress.`
     return { eyebrow, headline: `Start your morning routine.`, support, action: { target: 'skin' } }
   }
   const skincarePM = () => {
@@ -1797,8 +1866,11 @@ function buildCoach({ hour, minute, day, profile, skinDue, lastSleep, state, tod
   if (phase === 'morning') {
     if (water < 1) return { eyebrow, headline: `Drink a glass of water. Now.`, support: `Hydrate before anything else — the easiest win of the day.`, action: { target: 'water' } }
     if (!r.skincareAM && skinDue.amPending) return skincareAM()
-    if (session0 && session0.dayType !== 'rest' && !trainedToday)
-      return { eyebrow, headline: `Today's a ${session0.label.toLowerCase()} day.`, support: `${session0.emphasisReason || `${session0.reason}`} Save it for this evening — get your steps and protein in first.`, action: { target: 'movement' } }
+    if (session0 && session0.dayType !== 'rest' && !trainedToday) {
+      if (cyc.tone === 'ease')
+        return { eyebrow, headline: `Today's a ${session0.label.toLowerCase()} day — but listen to your body.`, support: `${cyc.coachNote} If you'd rather walk today, that counts. Otherwise save the session for this evening.`, action: { target: 'movement' } }
+      return { eyebrow, headline: `Today's a ${session0.label.toLowerCase()} day.`, support: `${session0.emphasisReason || `${session0.reason}`} Save it for this evening — get your steps and protein in first.${cyc.tone === 'push' || cyc.tone === 'peak' ? ` ${cyc.line}` : ''}`, action: { target: 'movement' } }
+    }
     const pn = proteinNudge(); if (pn) return pn
     const sleepTargetMin = (profile.sleepTargetHours || 7) * 60
     if (lastSleep && lastSleep.confident && lastSleep.minutes < sleepTargetMin)
@@ -1816,12 +1888,14 @@ function buildCoach({ hour, minute, day, profile, skinDue, lastSleep, state, tod
 
   // evening + night (17–24): movement decision comes from the engine.
   if (tcall && (tcall.focus === 'train' || tcall.focus === 'both')) return move(tcall)
+  const ee = eatEnough(); if (ee) return ee
   const pn = proteinNudge(); if (pn) return pn
   if (tcall && tcall.focus === 'walk') return move(tcall)
-  if (over) return { eyebrow, headline: `You're over your calorie ceiling.`, support: `Stop eating for tonight — no treats, no "just one more". The deficit is the whole game.`, action: { target: 'diet' } }
+  // On a GLP-1 we don't police a ceiling — undereating is the real risk, handled above.
+  if (over && !glp1) return { eyebrow, headline: `You're over your calorie ceiling.`, support: `Stop eating for tonight — no treats, no "just one more". The deficit is the whole game.`, action: { target: 'diet' } }
   if (water < wTarget && hour < 22) return { eyebrow, headline: `Finish your water — ${water} of ${wTarget}.`, support: `Don't go to bed short on hydration. Knock out the rest now.`, action: { target: 'water' } }
   if (!r.skincarePM && skinDue.pmPending) return skincarePM()
-  if (hour >= 21) return { eyebrow, headline: `That's a full day. Be in bed soon.`, support: `Recovery is non-negotiable. Weigh in first thing tomorrow — we track the trend, not the noise.`, action: null }
+  if (hour >= 21) return { eyebrow, headline: `That's a full day. Be in bed soon.`, support: `Recovery is non-negotiable. Weigh in first thing tomorrow — we track the trend, not the noise.${cyc.tone === 'ease' ? ` ${cyc.line}` : ''}`, action: null }
   return { eyebrow, headline: `You've handled today.`, support: `Training, food, water, skin — all tended. This is what consistency looks like.`, action: null }
 }
 function fmtTime(h, m) { const ap = h < 12 ? 'AM' : 'PM'; const hr = ((h + 11) % 12) + 1; return `${hr}:${String(m).padStart(2, '0')} ${ap}` }
@@ -2076,14 +2150,108 @@ function diaryScore(state, iso, profile) {
   return Math.max(0, Math.min(1, avg))
 }
 
+/* ---------- cycle: phase + period logging ---------- */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function fmtMonthDay(iso) { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return `${MONTHS[m - 1]} ${d}` }
+const PHASE_TINT = {
+  menstrual: '#b4543f', follicular: '#5b6745', ovulation: '#3d4a32', luteal: '#9a7b3d', late: '#8a8474',
+}
+function CycleCard({ state, profile, today, onLogStart, onRemoveStart, onProfile }) {
+  const [pickDate, setPickDate] = useState(today)
+  const [editing, setEditing] = useState(false)
+  const cyc = cyclePhase(today, state)
+  const log = [...(state.cycleLog || [])].sort((a, b) => b.localeCompare(a))
+  const cfg = profile.cycle || {}
+  const tint = PHASE_TINT[cyc.phase] || '#8a8474'
+
+  return (
+    <section className="mt-4 rounded-3xl border border-[#e6dfd0] bg-[#fbf9f3] p-5 shadow-[0_2px_10px_-6px_rgba(60,55,40,0.25)]">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-xl font-semibold text-[#23211c]">Cycle</h2>
+        {cyc.known && !cyc.overdue && (
+          <span className="text-[12px] text-[#a39c8d]">Day {cyc.dayOfCycle} · ~{cyc.length}-day cycle</span>
+        )}
+      </div>
+
+      {cyc.known ? (
+        <div className="mt-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tint }} />
+            <span className="font-display text-lg font-semibold text-[#23211c]">{cyc.label}</span>
+            {!cyc.overdue && cyc.daysToNext >= 0 && (
+              <span className="text-[13px] text-[#8a8474]">· next period ~{fmtMonthDay(cyc.nextStartIso)} ({cyc.daysToNext}d)</span>
+            )}
+          </div>
+          <p className="mt-2 text-[14px] leading-snug text-[#4a463c]">{cyc.coachNote}</p>
+        </div>
+      ) : (
+        <p className="mt-3 text-[14px] leading-snug text-[#4a463c]">
+          Log the day your period starts and the app will track your phase — and ease training and expectations around it.
+          {profile.glp1 ? ' On a GLP-1, cycles often shift, so logging each start keeps it honest.' : ''}
+        </p>
+      )}
+
+      {profile.glp1 && cyc.known && (
+        <p className="mt-2 text-[12px] leading-snug text-[#8a8474]">GLP-1 medications can delay, lengthen, or pause periods — log each one when it starts and the prediction re-centres.</p>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button onClick={() => onLogStart(today)}
+          className="rounded-2xl bg-[#3d4a32] px-4 py-2.5 text-sm font-semibold text-[#f4f1e8] transition active:scale-[0.98]">
+          Period started today
+        </button>
+        <label className="flex items-center gap-2 text-[13px] text-[#6f6a5d]">
+          <span>or started</span>
+          <input type="date" value={pickDate} max={today} onChange={(e) => setPickDate(e.target.value)}
+            className="rounded-xl border border-[#e0d9c9] bg-[#f3efe6] px-2 py-1.5 text-[13px] text-[#4a463c]" />
+          <button onClick={() => pickDate && onLogStart(pickDate)}
+            className="rounded-xl border border-[#e0d9c9] bg-[#f3efe6] px-3 py-1.5 font-medium text-[#4a463c] hover:bg-[#ebe6da]">Log</button>
+        </label>
+      </div>
+
+      {log.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-[12px] text-[#a39c8d]">Logged:</span>
+          {log.slice(0, 4).map((iso) => (
+            <button key={iso} onClick={() => onRemoveStart(iso)} title="Tap to remove"
+              className="rounded-full border border-[#e0d9c9] bg-[#f3efe6] px-2.5 py-1 text-[12px] text-[#6f6a5d] hover:bg-[#ebe6da]">
+              {fmtMonthDay(iso)} ×
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button onClick={() => setEditing((v) => !v)} className="mt-3 text-[13px] font-medium text-[#6f6a5d] underline-offset-2 hover:underline">
+        {editing ? 'Done' : 'Adjust cycle length'}
+      </button>
+      {editing && (
+        <div className="mt-2 flex flex-wrap gap-4">
+          <label className="text-[13px] text-[#6f6a5d]">
+            Avg cycle (days)
+            <input type="number" min="21" max="45" defaultValue={cfg.avgLength || 32}
+              onBlur={(e) => onProfile({ cycle: { ...cfg, avgLength: Math.max(21, Math.min(45, Number(e.target.value) || 32)) } })}
+              className="ml-2 w-16 rounded-xl border border-[#e0d9c9] bg-[#f3efe6] px-2 py-1.5 text-[#4a463c]" />
+          </label>
+          <label className="text-[13px] text-[#6f6a5d]">
+            Period (days)
+            <input type="number" min="2" max="10" defaultValue={cfg.periodLength || 7}
+              onBlur={(e) => onProfile({ cycle: { ...cfg, periodLength: Math.max(2, Math.min(10, Number(e.target.value) || 7)) } })}
+              className="ml-2 w-16 rounded-xl border border-[#e0d9c9] bg-[#f3efe6] px-2 py-1.5 text-[#4a463c]" />
+          </label>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function GoalsSection({ state, profile, today, onBodyFat, onProfile, onSleep, onManageSupps }) {
   const [estimating, setEstimating] = useState(false)
   const [editingSleep, setEditingSleep] = useState(false)
   const days = state.days || {}
   const log = state.bodyFatLog || []
   const latest = log[log.length - 1]
-  const target = profile.bodyFatTarget || 12
-  const deadline = profile.bodyFatDeadline || '2026-12-31'
+  const target = profile.bodyFatTarget || 22
+  const deadline = profile.bodyFatDeadline || '2027-12-31'
   const daysLeft = Math.max(0, Math.ceil((Date.parse(deadline) - Date.parse(today)) / 86400000))
 
   // All five pillars on the same rolling-7-day footing.
@@ -2210,6 +2378,95 @@ function clockGoal(hhmm) {
   return `${h}:${m[2]} ${ap}`
 }
 
+// "About you" — the one place personal facts are entered (kept out of the public
+// code, stored only in this device's localStorage). Drives age (TDEE), sex (body-fat
+// math), and GLP-1-aware diet coaching.
+function ProfileModal({ profile, onClose, onSave }) {
+  const [name, setName] = useState(profile.name || '')
+  const [dob, setDob] = useState(profile.dob || '')
+  const [sex, setSex] = useState(profile.sex || 'female')
+  const [height, setHeight] = useState(profile.height ? String(profile.height) : '')
+  const [glp1, setGlp1] = useState(!!profile.glp1)
+  const [bft, setBft] = useState(String(profile.bodyFatTarget ?? 22))
+  const [prot, setProt] = useState(String(profile.proteinTarget ?? 120))
+  const [steps, setSteps] = useState(String(profile.stepTarget ?? 8000))
+  const num = (v, d) => (Number(v) > 0 ? Number(v) : d)
+
+  const save = () => onSave({
+    name: name.trim(), dob: dob || undefined, sex, glp1,
+    height: num(height, profile.height),
+    bodyFatTarget: num(bft, 22), proteinTarget: num(prot, 120), stepTarget: num(steps, 8000),
+  })
+
+  const fieldCls = 'rounded-xl border border-[#ddd5c5] bg-white px-3 py-2 text-[#23211c] outline-none focus:border-[#3d4a32]'
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-3 sm:items-center fade-in" onClick={onClose}>
+      <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl bg-[#f4f1ea] p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="font-display text-2xl font-semibold text-[#23211c]">About you</h3>
+            <p className="mt-1 text-[13px] text-[#8a8474]">Stays on this device only. Sets your coaching and the body-fat &amp; calorie math.</p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-[#a39c8d]">×</button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-medium text-[#23211c]">Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className={`${fieldCls} w-44`} />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-medium text-[#23211c]">Date of birth</label>
+            <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={fieldCls} />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-medium text-[#23211c]">Sex</label>
+            <div className="flex gap-2">
+              <Chip small on={sex === 'female'} onClick={() => setSex('female')}>Female</Chip>
+              <Chip small on={sex === 'male'} onClick={() => setSex('male')}>Male</Chip>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-medium text-[#23211c]">Height (cm)</label>
+            <input type="number" inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="165" className={`${fieldCls} w-24`} />
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#e0d9c9] bg-[#efeadf] px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-[#23211c]">On a GLP-1 (e.g. Wegovy, Ozempic)?</p>
+              <p className="mt-0.5 text-[12px] leading-snug text-[#8a8474]">If yes, coaching shifts to eating enough protein to protect muscle — not policing calories.</p>
+            </div>
+            <div className="flex gap-2">
+              <Chip small on={glp1} onClick={() => setGlp1(true)}>Yes</Chip>
+              <Chip small on={!glp1} onClick={() => setGlp1(false)}>No</Chip>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-5 text-[11px] uppercase tracking-[0.18em] text-[#a39c8d]">Targets</p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <label className="text-[12px] text-[#6f6a5d]">Body fat %
+            <input type="number" inputMode="decimal" value={bft} onChange={(e) => setBft(e.target.value)} className={`${fieldCls} mt-1 w-full`} />
+          </label>
+          <label className="text-[12px] text-[#6f6a5d]">Protein/day
+            <input type="number" inputMode="numeric" value={prot} onChange={(e) => setProt(e.target.value)} className={`${fieldCls} mt-1 w-full`} />
+          </label>
+          <label className="text-[12px] text-[#6f6a5d]">Steps/day
+            <input type="number" inputMode="numeric" value={steps} onChange={(e) => setSteps(e.target.value)} className={`${fieldCls} mt-1 w-full`} />
+          </label>
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-full border border-[#d8d1c2] bg-white py-2.5 text-sm font-medium text-[#4a463c]">Cancel</button>
+          <button onClick={save} className="flex-1 rounded-full bg-[#3d4a32] py-2.5 text-sm font-semibold text-[#f4f1e8] active:scale-95">Save</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Compact corrector for last night's sleep. Two time inputs + an interruptions
 // stepper. Computes minutes from the bed/wake times, handling the overnight
 // crossover (bed 23:40 + wake 07:30 ≈ 7h50m). Writes a manual override.
@@ -2321,12 +2578,14 @@ function bfCategory(pct, sex) {
 
 function BodyFatModal({ profile, onClose, onSave }) {
   const m0 = profile.measurements || {}
-  const [sex, setSex] = useState(profile.sex || 'male')
+  const [sex, setSex] = useState(profile.sex || 'female')
   const [unit, setUnit] = useState('cm')
   const [height, setHeight] = useState(profile.height ? String(round1(profile.height)) : '')
   const [neck, setNeck] = useState(m0.neck ? String(round1(m0.neck)) : '')
   const [waist, setWaist] = useState(m0.waist ? String(round1(m0.waist)) : '')
   const [hip, setHip] = useState(m0.hip ? String(round1(m0.hip)) : '')
+  const [known, setKnown] = useState('') // a known % from a body-composition scan (DEXA/SECA/InBody)
+  const knownPct = Number(known) > 0 && Number(known) < 60 ? round1(Number(known)) : null
 
   const toCm = (v) => (unit === 'in' ? Number(v) * 2.54 : Number(v))
   const switchUnit = (u) => {
@@ -2373,6 +2632,18 @@ function BodyFatModal({ profile, onClose, onSave }) {
           ) : (
             <p className="text-[13px] text-[#9aa581]">Enter your measurements to see the estimate.</p>
           )}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[#e0d9c9] bg-[#efeadf] px-4 py-3">
+          <p className="text-[13px] font-medium text-[#4a463c]">Already have a number?</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-[#8a8474]">From a DEXA, SECA, or InBody scan — enter it directly and skip the tape.</p>
+          <div className="mt-2 flex items-center gap-2">
+            <input type="number" inputMode="decimal" step="0.1" value={known} onChange={(e) => setKnown(e.target.value)} placeholder="e.g. 51.7"
+              className="w-24 rounded-xl border border-[#ddd5c5] bg-white px-3 py-2 text-[#23211c] outline-none focus:border-[#3d4a32]" />
+            <span className="text-[14px] text-[#6f6a5d]">%</span>
+            <button disabled={!knownPct} onClick={() => onSave(knownPct, { sex })}
+              className="ml-auto rounded-full bg-[#3d4a32] px-4 py-2 text-sm font-semibold text-[#f4f1e8] disabled:opacity-40">Save %</button>
+          </div>
         </div>
 
         <div className="mt-4 flex gap-2">
