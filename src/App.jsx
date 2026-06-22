@@ -984,10 +984,10 @@ function DietCard({ state, dateIso, day, onLog, onRemove, onAdd, onSaveCustom, o
             </div>
             <div className="flex flex-wrap gap-2">
               {shownItems.map((it) => (
-                <PantryButton key={it.id} item={it} onTap={() => onLog(it, 1)} onLongPress={() => setQtyItem(it)} />
+                <PantryButton key={it.id} item={it} onTap={() => onLog(it, 1)} onMore={() => setQtyItem(it)} />
               ))}
             </div>
-            <p className="mt-1.5 text-[11px] text-[#b3ac9c]">Tap to log one · press &amp; hold to set a quantity</p>
+            <p className="mt-1.5 text-[11px] text-[#b3ac9c]">Tap to log one · tap ⋯ to set a quantity or options</p>
           </>
         ) : (
           <p className="text-[13px] text-[#8a8474]">Nothing here yet — add what you ate below.</p>
@@ -1052,34 +1052,25 @@ function DietCard({ state, dateIso, day, onLog, onRemove, onAdd, onSaveCustom, o
 // A pantry chip: single tap logs one serving; press-and-hold opens the quantity
 // editor. Pointer events unify touch + mouse; contextmenu is suppressed so the
 // iOS long-press callout doesn't fire.
-function PantryButton({ item, onTap, onLongPress }) {
-  const longRef = useRef(false)
-  const timer = useRef(null)
-  const start = useRef({ x: 0, y: 0 })
+// A pantry chip: tap the body to log one serving; tap the ⋯ control to open the
+// quantity / options sheet. (An explicit control beats a long-press — reliable on
+// every phone and discoverable.)
+function PantryButton({ item, onTap, onMore }) {
   const bad = isUnhealthy(item)
-  const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null } }
-  // Pointer capture keeps every move/up on this chip even if the finger jitters or
-  // drifts off it, so iOS can't cancel the press early (the bug on some iPhones).
-  const down = (e) => {
-    longRef.current = false
-    start.current = { x: e.clientX, y: e.clientY }
-    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* older browsers */ }
-    timer.current = setTimeout(() => { longRef.current = true; onLongPress() }, 450)
-  }
-  // Only a real drag/scroll (finger moves >10px) cancels the long-press — jitter doesn't.
-  const move = (e) => {
-    const dx = e.clientX - start.current.x, dy = e.clientY - start.current.y
-    if (dx * dx + dy * dy > 100) clear()
-  }
-  const up = () => { const wasLong = longRef.current; clear(); if (!wasLong) onTap() }
+  const base = bad ? 'border-[#dcae73] bg-[#fbf1e1]' : 'border-[#d8d1c2] bg-[#fbf9f3]'
+  const div = bad ? 'border-[#e6c79a]' : 'border-[#e2dccd]'
   return (
-    <button onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={clear}
-      onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: 'none', touchAction: 'manipulation' }}
-      className={`select-none rounded-full border px-3 py-1.5 text-[13px] text-[#3a382f] transition active:scale-[0.97] ${
-        bad ? 'border-[#dcae73] bg-[#fbf1e1] hover:bg-[#f6e9d3]' : 'border-[#d8d1c2] bg-[#fbf9f3] hover:bg-[#f3efe6]'}`}>
-      {bad && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#c9742e] align-middle" title="Treat" />}
-      {item.name} <span className="text-[#a39c8d]">· {item.portion}</span>
-    </button>
+    <span className={`inline-flex select-none items-stretch overflow-hidden rounded-full border ${base}`}>
+      <button onClick={onTap}
+        className="px-3 py-1.5 text-[13px] text-[#3a382f] transition active:scale-[0.97]">
+        {bad && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#c9742e] align-middle" title="Treat" />}
+        {item.name} <span className="text-[#a39c8d]">· {item.portion}</span>
+      </button>
+      <button onClick={onMore} aria-label={`Quantity and options for ${item.name}`}
+        className={`flex items-center border-l ${div} px-2.5 text-[#8a8474] transition active:scale-[0.97] hover:text-[#3d4a32]`}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
+      </button>
+    </span>
   )
 }
 
