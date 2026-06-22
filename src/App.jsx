@@ -757,8 +757,10 @@ function FocusCard({ focus, day, profile, hour, weightLog, state, dateIso, onSta
 
       {focus === 'hair' && (
         <div className="space-y-2">
-          <SkinStart label="Start morning hair" done={r.haircareAM} primary={hour < 17} locked={!(hour >= 6 && hour < 12)} hint="Opens 6 AM" onClick={() => onStartHair('am')} />
-          <SkinStart label="Start evening hair" done={r.haircarePM} primary={hour >= 17} locked={hour < 18} hint="Opens 6 PM" onClick={() => onStartHair('pm')} />
+          {hairDue(dateIso, state).amCount > 0 && (
+            <SkinStart label="Start morning hair" done={r.haircareAM} primary={hour < 17} locked={!(hour >= 6 && hour < 12)} hint="Opens 6 AM" onClick={() => onStartHair('am')} />
+          )}
+          <SkinStart label="Minoxidil — evening" done={r.haircarePM} primary={hour >= 17} locked={hour < 18} hint="Opens 6 PM" onClick={() => onStartHair('pm')} />
         </div>
       )}
 
@@ -2096,7 +2098,8 @@ function ScoreRing({ score, label }) {
 // actually have data — so partial app history doesn't tank the score, and all
 // pillars share the same window. null until there's a logged day.
 const skinQ = (d) => ((d.routines?.skincareAM ? 1 : 0) + (d.routines?.skincarePM ? 1 : 0)) / 2
-const hairQ = (d) => ((d.routines?.haircareAM ? 1 : 0) + (d.routines?.haircarePM ? 1 : 0)) / 2
+// Hair is a PM-only routine (nightly minoxidil), so score on the evening alone.
+const hairQ = (d) => (d.routines?.haircarePM ? 1 : 0)
 const moveQ = (d, profile) => {
   const trained = (d.workout?.did && d.workout.type !== 'Rest') || d.workout?.session?.status === 'done'
   return trained ? 1 : Math.min(1, (d.steps || 0) / (profile.stepTarget || 10000))

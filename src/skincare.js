@@ -10,7 +10,6 @@ export const PRODUCTS = [
   { id: 'cleanser', name: 'Cleanser', when: 'both', kind: 'daily' },
   { id: 'moisturizer', name: 'Moisturizer', when: 'both', kind: 'daily' },
   { id: 'spf', name: 'SPF', when: 'am', kind: 'daily' },
-  { id: 'guasha', name: 'Gua sha', when: 'pm', kind: 'daily' },
   { id: 'eyeserum', name: 'Caffeine eye serum', when: 'both', kind: 'daily', why: 'dark circles' },
   { id: 'vitc', name: 'Vitamin C serum', when: 'am', kind: 'active', unlock: 2, why: 'antioxidant, brightening' },
   { id: 'niacinamide', name: 'Niacinamide 10%', when: 'am', kind: 'active', unlock: 1, why: 'pigmentation, oil control' },
@@ -22,7 +21,7 @@ export const PRODUCTS = [
 export const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]))
 
 // Default ownership for a fresh profile.
-export const DEFAULT_OWNED = ['cleanser', 'moisturizer', 'spf', 'guasha']
+export const DEFAULT_OWNED = ['cleanser', 'moisturizer', 'spf']
 
 // Step copy. Title = imperative; instruction = one calm sentence.
 const STEP_COPY = {
@@ -36,7 +35,6 @@ const STEP_COPY = {
   retinoid: { title: 'Apply retinoid', instruction: 'A pea-sized amount across the face, kept clear of the eyes.' },
   azelaic: { title: 'Apply azelaic acid', instruction: 'A thin layer over pigmented areas.' },
   facialoil: { title: 'Seal with facial oil', instruction: 'A few drops pressed in over your moisturizer.' },
-  guasha: { title: 'Gua sha', instruction: 'Glide upward and out along the jaw and cheeks, slow and light.' },
 }
 
 // ---- date helpers (calendar, local, ISO yyyy-mm-dd) ----
@@ -170,7 +168,6 @@ export function planForDay(dateIso, state) {
   if (avail('eyeserum')) pm.push(mkStep('eyeserum', 'daily'))
   if (avail('moisturizer')) pm.push(mkStep('moisturizer', 'daily'))
   if (avail('facialoil')) pm.push(mkStep('facialoil', 'daily'))
-  if (avail('guasha')) pm.push(mkStep('guasha', 'daily'))
 
   return { am, pm }
 }

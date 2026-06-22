@@ -215,10 +215,11 @@ export function decideDayType(state, todayIso) {
   const sinceLast = last ? daysBetween(last.date, todayIso) : Infinity
   const weekCount = sessionsThisWeek(hist, todayIso)
 
-  // Rest recommendation: weekly target already met and trained within ~a day.
-  if (weekCount >= target && sinceLast <= 1) {
+  // Weekly target is 3×/week, not daily — once it's met, rest for the rest of
+  // the week (walk + steps instead). You can still force a session if you want one.
+  if (weekCount >= target) {
     return { dayType: 'rest', rest: true,
-      reason: `You've trained ${weekCount}× this week and lifted ${sinceLast === 0 ? 'today' : 'yesterday'}. Recover — walk, hit your steps, let the work land.` }
+      reason: `You've trained ${weekCount}× this week — that's your ${target}×/week target. Recover now: walk, hit your steps, let the work land. Lifting picks up again next week.` }
   }
 
   const next = lastTyped ? rotateAfter(lastTyped.day) : 'push'
