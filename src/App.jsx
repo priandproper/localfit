@@ -1055,13 +1055,26 @@ function DietCard({ state, dateIso, day, onLog, onRemove, onAdd, onSaveCustom, o
 function PantryButton({ item, onTap, onLongPress }) {
   const longRef = useRef(false)
   const timer = useRef(null)
+  const start = useRef({ x: 0, y: 0 })
   const bad = isUnhealthy(item)
   const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null } }
-  const down = () => { longRef.current = false; timer.current = setTimeout(() => { longRef.current = true; onLongPress() }, 450) }
-  const up = () => { clear(); if (!longRef.current) onTap() }
+  // Pointer capture keeps every move/up on this chip even if the finger jitters or
+  // drifts off it, so iOS can't cancel the press early (the bug on some iPhones).
+  const down = (e) => {
+    longRef.current = false
+    start.current = { x: e.clientX, y: e.clientY }
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* older browsers */ }
+    timer.current = setTimeout(() => { longRef.current = true; onLongPress() }, 450)
+  }
+  // Only a real drag/scroll (finger moves >10px) cancels the long-press — jitter doesn't.
+  const move = (e) => {
+    const dx = e.clientX - start.current.x, dy = e.clientY - start.current.y
+    if (dx * dx + dy * dy > 100) clear()
+  }
+  const up = () => { const wasLong = longRef.current; clear(); if (!wasLong) onTap() }
   return (
-    <button onPointerDown={down} onPointerUp={up} onPointerLeave={clear} onPointerCancel={clear}
-      onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: 'none' }}
+    <button onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={clear}
+      onContextMenu={(e) => e.preventDefault()} style={{ WebkitTouchCallout: 'none', touchAction: 'manipulation' }}
       className={`select-none rounded-full border px-3 py-1.5 text-[13px] text-[#3a382f] transition active:scale-[0.97] ${
         bad ? 'border-[#dcae73] bg-[#fbf1e1] hover:bg-[#f6e9d3]' : 'border-[#d8d1c2] bg-[#fbf9f3] hover:bg-[#f3efe6]'}`}>
       {bad && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#c9742e] align-middle" title="Treat" />}
