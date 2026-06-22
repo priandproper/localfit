@@ -2681,11 +2681,11 @@ function fmtFull(iso) {
 
 /* ---------- rewards: streak-based, leisure/time-off, non-food ---------- */
 const REWARDS = [
-  { days: 3, title: 'An episode, guilt-free', detail: 'Watch your show tonight — earned.' },
-  { days: 7, title: 'A movie night', detail: 'A proper movie, zero guilt.' },
-  { days: 14, title: 'Sleep in', detail: 'A slow morning, no alarm.' },
-  { days: 21, title: 'A gaming evening', detail: 'A full evening off the clock.' },
-  { days: 30, title: 'A complete rest day', detail: 'A whole day off. You earned every bit.' },
+  { days: 3, title: 'An episode, guilt-free', detail: 'Put your show on tonight — earned, no guilt.' },
+  { days: 7, title: 'A movie night', detail: 'A proper movie night, fully off the clock.' },
+  { days: 14, title: 'A slow morning', detail: 'Sleep in — no alarm, no rush.' },
+  { days: 21, title: 'A treat night in', detail: 'Your show and a treat you have been craving — order it in.' },
+  { days: 30, title: 'A full day off', detail: 'A whole day on the couch — movies and a proper treat meal. Every bit earned.' },
 ]
 function strongDay(d, profile) {
   if (!d) return false
