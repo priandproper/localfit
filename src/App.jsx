@@ -2638,7 +2638,7 @@ function BodyFatModal({ profile, onClose, onSave }) {
           <p className="text-[13px] font-medium text-[#4a463c]">Already have a number?</p>
           <p className="mt-0.5 text-[12px] leading-snug text-[#8a8474]">From a DEXA, SECA, or InBody scan — enter it directly and skip the tape.</p>
           <div className="mt-2 flex items-center gap-2">
-            <input type="number" inputMode="decimal" step="0.1" value={known} onChange={(e) => setKnown(e.target.value)} placeholder="e.g. 51.7"
+            <input type="number" inputMode="decimal" step="0.1" value={known} onChange={(e) => setKnown(e.target.value)} placeholder="e.g. 28"
               className="w-24 rounded-xl border border-[#ddd5c5] bg-white px-3 py-2 text-[#23211c] outline-none focus:border-[#3d4a32]" />
             <span className="text-[14px] text-[#6f6a5d]">%</span>
             <button disabled={!knownPct} onClick={() => onSave(knownPct, { sex })}
